@@ -751,7 +751,13 @@ fn head_switching(
             && let Some(mid_line) = mid_line
         {
             // Shift the entire row, but only copy back a portion of it.
-            shift_row_to(row, scratch, noisy_shift, BoundaryHandling::Constant(0.0));
+            shift_row_to(
+                row,
+                scratch,
+                noisy_shift,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
 
             let seeder = Seeder::new(info.seed)
                 .mix(noise_seeds::HEAD_SWITCHING_MID_LINE_JITTER)
@@ -778,7 +784,12 @@ fn head_switching(
                 row[i] += (1.0 - (x / transient_len)).powi(3) * transient_intensity;
             }
         } else {
-            shift_row(row, noisy_shift, BoundaryHandling::Constant(0.0));
+            shift_row(
+                row,
+                noisy_shift,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
         }
     });
 }
@@ -909,6 +920,7 @@ fn tracking_noise(
                 * 0.25
                 * info.horizontal_scale,
             BoundaryHandling::Constant(0.0),
+            info.level,
         );
 
         video_noise_line(
@@ -963,7 +975,13 @@ fn chroma_delay(yiq: &mut YiqView, info: &CommonInfo, offset: (f32, isize)) {
         if offset.0.abs() == 0.0 {
             dst.copy_from_slice(src);
         } else {
-            shift_row_to(src, dst, horiz_shift, BoundaryHandling::Constant(0.0));
+            shift_row_to(
+                src,
+                dst,
+                horiz_shift,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
         }
     };
 
@@ -998,8 +1016,8 @@ fn chroma_delay(yiq: &mut YiqView, info: &CommonInfo, offset: (f32, isize)) {
         std::cmp::Ordering::Equal => {
             // Only a horizontal shift is necessary. We can do this in-place easily.
             ZipChunks::new([yiq.i, yiq.q], width).par_for_each(|_, [i, q]| {
-                shift_row(i, horiz_shift, BoundaryHandling::Constant(0.0));
-                shift_row(q, horiz_shift, BoundaryHandling::Constant(0.0));
+                shift_row(i, horiz_shift, BoundaryHandling::Constant(0.0), info.level);
+                shift_row(q, horiz_shift, BoundaryHandling::Constant(0.0), info.level);
             });
         }
         std::cmp::Ordering::Greater => {
@@ -1060,7 +1078,7 @@ fn vhs_edge_wave(yiq: &mut YiqView, info: &CommonInfo, settings: &VHSEdgeWaveSet
         ZipChunks::new([plane], width).par_for_each(|index, [row]| {
             let shift =
                 (noise_dest[index] / 0.022) * settings.intensity * 0.5 * info.horizontal_scale;
-            shift_row(row, shift, BoundaryHandling::Extend);
+            shift_row(row, shift, BoundaryHandling::Extend, info.level);
         })
     }
 }

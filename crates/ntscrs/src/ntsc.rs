@@ -329,6 +329,7 @@ const Q_MULT_INV: [f32; 4] = [0.0, -1.0, 0.0, 1.0];
 /// Demodulate the chroma back into the I and Q channels, given the Y channel and the modulated signal. This inner loop
 /// uses SIMD on 4-wide chunks at a time and doesn't handle boundary conditions. The very first column, and any
 /// remainder afterwards, is handled by the non-SIMD function.
+#[inline(always)]
 fn demodulate_chroma_simd_inner<S: Simd>(
     simd: S,
     y: &[f32],

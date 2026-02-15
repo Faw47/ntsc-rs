@@ -1,4 +1,4 @@
-use macros::FullSettings;
+use ntsc_rs_macros::FullSettings;
 
 use super::{
     MenuItem, SettingDescriptor, SettingKind, Settings, SettingsBlock,

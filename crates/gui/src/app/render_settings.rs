@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, path::PathBuf};
 
 use gstreamer::{ClockTime, Fraction};
-use ntscrs::{NtscEffect, NtscEffectFullSettings, settings::UseField};
+use ntsc_rs::{NtscEffect, NtscEffectFullSettings, settings::UseField};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

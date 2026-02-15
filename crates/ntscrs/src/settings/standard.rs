@@ -4,7 +4,7 @@ use crate::{
     settings::{JsonValue, SettingsBlock},
     yiq_fielding::YiqField,
 };
-use macros::FullSettings;
+use ntsc_rs_macros::FullSettings;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use super::{

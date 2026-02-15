@@ -1,4 +1,4 @@
-use ntscrs::settings::{ParseSettingsError, sval_json};
+use ntsc_rs::settings::{ParseSettingsError, sval_json};
 use snafu::Snafu;
 
 use crate::gst_utils::{gstreamer_error::GstreamerError, ntsc_pipeline::PipelineError};

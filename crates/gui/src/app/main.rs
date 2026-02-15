@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-use ntscrs::settings::{
+use ntsc_rs::settings::{
     EnumValue as SettingsEnumValue, SettingDescriptor, SettingKind, Settings, SettingsList,
     easy::{self, EasyModeFullSettings},
     standard::{NtscEffectFullSettings, setting_id},

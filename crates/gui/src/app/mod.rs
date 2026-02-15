@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use app_state::GstreamerInitState;
 use eframe::egui::util::undoer::Undoer;
-use ntscrs::{
+use ntsc_rs::{
     NtscEffectFullSettings,
     settings::{SettingsList, easy::EasyModeFullSettings},
 };

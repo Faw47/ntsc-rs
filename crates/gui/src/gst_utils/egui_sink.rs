@@ -5,7 +5,7 @@ use gstreamer::{PadTemplate, glib};
 use gstreamer_video::subclass::prelude::*;
 use gstreamer_video::video_frame::Readable;
 use gstreamer_video::{VideoFrame, VideoFrameExt};
-use ntscrs::yiq_fielding::{self, Rgbx};
+use ntsc_rs::yiq_fielding::{self, Rgbx};
 use std::fmt::Debug;
 use std::sync::{Mutex, OnceLock};
 

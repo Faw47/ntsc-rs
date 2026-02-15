@@ -1,6 +1,6 @@
 use gstreamer::{BufferRef, ClockTime, FlowError};
 use gstreamer_video::{VideoFormat, VideoFrameExt, VideoFrameRef, VideoInterlaceMode};
-use ntscrs::{
+use ntsc_rs::{
     settings::standard::NtscEffect,
     yiq_fielding::{
         Bgrx, BlitInfo, DeinterlaceMode, Normalize, PixelFormat, Rect, Rgbx, Xbgr, Xrgb, YiqField,

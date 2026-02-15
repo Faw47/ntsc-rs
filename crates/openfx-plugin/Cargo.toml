@@ -1,5 +1,5 @@
 [package]
-name = "openfx-plugin"
+name = "ntsc-rs-openfx-plugin"
 version = "0.1.6"
 edition = "2021"
 license = "MIT OR ISC OR Apache-2.0"
@@ -7,7 +7,7 @@ repository = "https://github.com/valadaptive/ntsc-rs/tree/main/crates/openfx-plu
 
 [dependencies]
 allocator-api2 = "0.2.16"
-ntscrs = { path = "../ntscrs" }
+ntsc-rs = { path = "../ntscrs" }
 rfd = "0.15.3"
 
 [build-dependencies]

@@ -22,7 +22,7 @@ use allocator_api2::{
     boxed::Box as AllocBox,
 };
 
-use ntscrs::{
+use ntsc_rs::{
     NtscEffect,
     settings::{
         EnumValue, SettingDescriptor, SettingID, SettingKind, Settings, SettingsList,

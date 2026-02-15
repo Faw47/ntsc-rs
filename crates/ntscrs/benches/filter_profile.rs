@@ -1,9 +1,9 @@
 extern crate criterion;
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use ntscrs::{
+use ntsc_rs::{
     NtscEffect,
-    yiq_fielding::{BlitInfo, Rgb, YiqView, pixel_bytes_for},
+    yiq_fielding::{BlitInfo, DeinterlaceMode, Rgb, YiqView, pixel_bytes_for},
 };
 
 const BENCH_IMAGE: &'static [u8] = include_bytes!("./balloons.png");
@@ -41,7 +41,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 yiq.write_to_strided_buffer::<Rgb, u8, _>(
                     dest,
                     blit_info,
-                    ntscrs::yiq_fielding::DeinterlaceMode::Bob,
+                    DeinterlaceMode::Bob,
                     (),
                 );
                 black_box(dest);

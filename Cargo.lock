@@ -128,18 +128,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "ae-plugin"
-version = "0.1.0"
-dependencies = [
- "after-effects",
- "ntscrs",
- "pipl",
- "premiere",
- "raw-window-handle",
- "rfd",
-]
-
-[[package]]
 name = "after-effects"
 version = "0.3.0"
 source = "git+https://github.com/virtualritz/after-effects?rev=0e0b197#0e0b197850f28c1bb24e8c82fce2e3d4c120d1e9"
@@ -2306,38 +2294,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gui"
-version = "0.9.3"
-dependencies = [
- "async-executor",
- "blocking",
- "clap",
- "color-eyre",
- "console",
- "eframe",
- "embed-resource",
- "env_logger",
- "fontique",
- "futures-lite",
- "gst-plugin-webp",
- "gstreamer",
- "gstreamer-base",
- "gstreamer-pbutils",
- "gstreamer-video",
- "log",
- "logos",
- "ntscrs",
- "open",
- "rand",
- "rfd",
- "serde",
- "snafu",
- "tinyjson",
- "trash",
- "ureq",
-]
-
-[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2919,15 +2875,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3110,14 +3057,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntscrs"
+name = "ntsc-rs"
 version = "0.1.2"
 dependencies = [
  "criterion",
  "fearless_simd",
  "hifijson",
  "image",
- "macros",
+ "ntsc-rs-macros",
  "num_cpus",
  "num_enum",
  "rand",
@@ -3126,6 +3073,69 @@ dependencies = [
  "siphasher",
  "sval",
  "sval_json",
+]
+
+[[package]]
+name = "ntsc-rs-ae-plugin"
+version = "0.1.0"
+dependencies = [
+ "after-effects",
+ "ntsc-rs",
+ "pipl",
+ "premiere",
+ "raw-window-handle",
+ "rfd",
+]
+
+[[package]]
+name = "ntsc-rs-gui"
+version = "0.9.3"
+dependencies = [
+ "async-executor",
+ "blocking",
+ "clap",
+ "color-eyre",
+ "console",
+ "eframe",
+ "embed-resource",
+ "env_logger",
+ "fontique",
+ "futures-lite",
+ "gst-plugin-webp",
+ "gstreamer",
+ "gstreamer-base",
+ "gstreamer-pbutils",
+ "gstreamer-video",
+ "log",
+ "logos",
+ "ntsc-rs",
+ "open",
+ "rand",
+ "rfd",
+ "serde",
+ "snafu",
+ "tinyjson",
+ "trash",
+ "ureq",
+]
+
+[[package]]
+name = "ntsc-rs-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "ntsc-rs-openfx-plugin"
+version = "0.1.6"
+dependencies = [
+ "allocator-api2",
+ "bindgen 0.71.1",
+ "ntsc-rs",
+ "rfd",
 ]
 
 [[package]]
@@ -3525,16 +3535,6 @@ dependencies = [
  "is-wsl",
  "libc",
  "pathdiff",
-]
-
-[[package]]
-name = "openfx-plugin"
-version = "0.1.6"
-dependencies = [
- "allocator-api2",
- "bindgen 0.71.1",
- "ntscrs",
- "rfd",
 ]
 
 [[package]]

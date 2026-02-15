@@ -20,17 +20,13 @@ use clap::{
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
-use gui::{
+use ntsc_rs_gui::{
     app::{
-        executor::ApplessExecutor,
-        format_eta::format_eta,
-        render_job::{RenderJob, RenderJobState, SharedRenderJob},
-        render_settings::{
+        self, executor::ApplessExecutor, format_eta::format_eta, render_job::{RenderJob, RenderJobState, SharedRenderJob}, render_settings::{
             Ffv1BitDepth, Ffv1Settings, H264Settings, OutputCodec, PngSequenceSettings,
             PngSettings, RenderInterlaceMode, RenderPipelineCodec, RenderPipelineSettings,
             StillImageSettings,
-        },
-        ui_context::UIContext,
+        }, ui_context::UIContext
     },
     gst_utils::{
         clock_format::clock_time_parser,
@@ -38,7 +34,7 @@ use gui::{
         ntsc_pipeline::{VideoScale, VideoScaleFilter},
     },
 };
-use ntscrs::{
+use ntsc_rs::{
     NtscEffectFullSettings,
     settings::{ParseSettingsError, SettingsList},
 };
@@ -211,7 +207,7 @@ pub fn main() -> Result<()> {
             Arg::new("settings-json")
                 .short('j')
                 .long("settings-json")
-                // TODO: ValueParser that wraps ntscrs::settings
+                // TODO: ValueParser that wraps ntsc_rs::settings
                 .help("JSON string for an effect settings preset.")
                 .conflicts_with("settings-path")
                 .value_parser(parse_standard_settings.clone()),
@@ -550,7 +546,7 @@ struct CliExecutor(Arc<async_executor::Executor<'static>>);
 impl ApplessExecutor for CliExecutor {
     fn spawn(
         &self,
-        future: impl std::future::Future<Output = Option<gui::app::ApplessFn>> + 'static + Send,
+        future: impl std::future::Future<Output = Option<app::ApplessFn>> + 'static + Send,
     ) {
         let inner = &self.0;
         inner

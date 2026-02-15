@@ -5,8 +5,8 @@ use gstreamer::prelude::{GstParamSpecBuilderExt, ParamSpecBuilderExt, ToValue};
 use gstreamer_video::subclass::prelude::*;
 use gstreamer_video::{VideoFormat, VideoFrameExt};
 
-use ntscrs::NtscEffect;
-use ntscrs::yiq_fielding::{Bgrx, Rgbx, Xbgr, Xrgb};
+use ntsc_rs::NtscEffect;
+use ntsc_rs::yiq_fielding::{Bgrx, Rgbx, Xbgr, Xrgb};
 
 use super::process_gst_frame::process_gst_frame;
 

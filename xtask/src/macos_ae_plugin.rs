@@ -67,7 +67,7 @@ fn build_plugin_for_target(
 
     let mut cargo_args: Vec<_> = vec![
         String::from("build"),
-        String::from("--package=ae-plugin"),
+        String::from("--package=ntsc-rs-ae-plugin"),
         String::from("--target"),
         target.target_triple.to_string(),
     ];

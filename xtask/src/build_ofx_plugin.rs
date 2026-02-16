@@ -104,7 +104,7 @@ fn build_plugin_for_target(target: &Target, release_mode: bool) -> std::io::Resu
 
     let mut cargo_args: Vec<_> = vec![
         String::from("build"),
-        String::from("--package=openfx-plugin"),
+        String::from("--package=ntsc-rs-openfx-plugin"),
         String::from("--lib"),
         String::from("--target"),
         target.target_triple.to_string(),

@@ -127,7 +127,7 @@ jobs:
 
     - name: Build After Effects plugin
       run: |
-        cargo build --release -p ae-plugin
+        cargo build --release -p ntsc-rs-ae-plugin
         cp target\release\ae_plugin.dll .\ntsc-rs-ae.aex
       working-directory: ${{ env.FAST_WORKSPACE }}
 

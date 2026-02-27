@@ -178,14 +178,18 @@ impl TransferFunction {
         z: [&mut [f32]; ROWS],
         delay: usize,
     ) {
+        let width = signal.len();
+        if width == 0 {
+            return;
+        }
         let filter_len = num.len();
         for row_idx in 0..ROWS {
             let signal = &mut signal[row_idx];
-            for i in 0..(signal.len() + delay) {
+            for i in 0..(width + delay) {
                 // Either the loop bound extending past items.len() or the min() call seems to prevent the optimizer from
                 // determining that we're in-bounds here. Since i.min(items.len() - 1) never exceeds items.len() - 1 by
                 // definition, this is safe.
-                let sample = unsafe { signal.get_unchecked(i.min(signal.len() - 1)) };
+                let sample = unsafe { signal.get_unchecked(i.min(width - 1)) };
                 let filt_sample = Self::filter_sample(filter_len, num, den, z[row_idx], *sample);
                 if i >= delay {
                     signal[i - delay] = filt_sample;

@@ -971,7 +971,7 @@ fn chroma_delay(yiq: &mut YiqView, info: &CommonInfo, offset: (f32, isize)) {
         offset.0 * info.horizontal_scale,
         ((offset.1 as f32) * info.vertical_scale).round() as isize,
     );
-    let horiz_shift = offset.0 * info.horizontal_scale;
+    let horiz_shift = offset.0;
     let copy_or_shift = |src: &mut [f32], dst: &mut [f32]| {
         if offset.0.abs() == 0.0 {
             dst.copy_from_slice(src);

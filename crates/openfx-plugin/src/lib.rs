@@ -1100,7 +1100,7 @@ unsafe impl Allocator for OfxAllocator {
         let memoryAlloc = data.memory_suite.memoryAlloc.ok_or(AllocError)?;
 
         if layout.size() == 0 {
-            panic!("zero-size allocations are not supported");
+            return Err(AllocError);
         }
 
         let mut buf = ptr::null_mut();
@@ -1225,7 +1225,7 @@ impl EffectStorageParams<'_> {
             // Currently untested because I can't find an OFX host that uses negative rowbytes. Fingers crossed it works!
             let row_size = self.dst_row_bytes / mem::size_of::<T>() as i32;
             (
-                self.dst_ptr.sub(-row_size as usize * (srcHeight - 1)),
+                self.dst_ptr.sub(-row_size as usize * (dstHeight - 1)),
                 false,
             )
         } else {

@@ -19,7 +19,7 @@ pub fn format_path_for_multi_file(path: impl AsRef<Path>) -> PathBuf {
         if path_char == b'#' && !added_sequence_number {
             added_sequence_number = true;
             let mut num_digits = 0;
-            while src_path_bytes[i] == b'#' {
+            while src_path_bytes.get(i) == Some(&b'#') {
                 num_digits += 1;
                 i += 1;
             }

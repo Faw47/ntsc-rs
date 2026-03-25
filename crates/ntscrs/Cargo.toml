@@ -17,6 +17,9 @@ rayon-core = { version = "1.13.0", optional = true }
 num_cpus = { version = "1.16.0", optional = true }
 sval = { version = "2.14.1", features = ["std"] }
 sval_json = { version = "2.14.1", features = ["std"] }
+wgpu = { version = "27.0.1", optional = true }
+pollster = { version = "0.4.0", optional = true }
+bytemuck = { version = "1.25.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", default-features = false }
@@ -25,6 +28,7 @@ image = { version = "0.25.1", default-features = false, features = ["png"] }
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon-core", "dep:num_cpus"]
+wgpu-backend = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [[bench]]
 name = "filter_profile"

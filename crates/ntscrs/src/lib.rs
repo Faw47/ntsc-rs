@@ -1,3 +1,5 @@
+#[cfg(feature = "wgpu-backend")]
+pub mod backend;
 mod filter;
 mod noise;
 mod ntsc;

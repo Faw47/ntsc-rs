@@ -3173,6 +3173,7 @@ dependencies = [
 name = "ntsc-rs"
 version = "0.1.2"
 dependencies = [
+ "bytemuck",
  "criterion",
  "fearless_simd",
  "hifijson",
@@ -3180,12 +3181,14 @@ dependencies = [
  "ntsc-rs-macros",
  "num_cpus",
  "num_enum",
+ "pollster",
  "rand",
  "rand_xoshiro",
  "rayon-core",
  "siphasher",
  "sval",
  "sval_json",
+ "wgpu",
 ]
 
 [[package]]

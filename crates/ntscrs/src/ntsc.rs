@@ -1474,7 +1474,7 @@ impl NtscEffect {
         };
     }
 
-    fn apply_effect_to_all_fields(
+    pub(crate) fn apply_effect_cpu_to_all_fields(
         &self,
         yiq: &mut YiqView,
         frame_num: usize,
@@ -1519,7 +1519,7 @@ impl NtscEffect {
 
     /// Apply the effect to YIQ image data.
     pub fn apply_effect_to_yiq(&self, yiq: &mut YiqView, frame_num: usize, scale_factor: [f32; 2]) {
-        with_thread_pool(|| self.apply_effect_to_all_fields(yiq, frame_num, scale_factor));
+        with_thread_pool(|| self.apply_effect_cpu_to_all_fields(yiq, frame_num, scale_factor));
     }
 
     /// Apply the effect to YIQ image data using runtime backend selection.
@@ -1602,5 +1602,142 @@ impl NtscEffect {
             crate::yiq_fielding::DeinterlaceMode::Bob,
             (),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_info() -> CommonInfo {
+        CommonInfo {
+            level: Level::new(),
+            seed: 0xA11C_E5EED,
+            frame_num: 13,
+            horizontal_scale: 1.25,
+            vertical_scale: 0.75,
+        }
+    }
+
+    fn plane_noise_reference(
+        plane: &mut [f32],
+        width: usize,
+        info: &CommonInfo,
+        settings: &FbmNoiseSettings,
+        noise_seed: u64,
+    ) {
+        let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+        for (index, row) in plane.chunks_exact_mut(width).enumerate() {
+            video_noise_line(
+                row,
+                &seeder,
+                info.level,
+                index,
+                settings.frequency / info.horizontal_scale,
+                settings.intensity,
+                settings.detail.try_into().unwrap_or_default(),
+            );
+        }
+    }
+
+    fn chroma_delay_reference(yiq: &mut YiqView, info: &CommonInfo, offset: (f32, isize)) {
+        let offset = (
+            offset.0 * info.horizontal_scale,
+            ((offset.1 as f32) * info.vertical_scale).round() as isize,
+        );
+        let width = yiq.dimensions.0;
+        let height = yiq.num_rows();
+
+        let src_i = yiq.i.to_vec();
+        let src_q = yiq.q.to_vec();
+
+        for dst_row in 0..height {
+            let src_row = dst_row as isize - offset.1;
+            let dst_range = dst_row * width..(dst_row + 1) * width;
+
+            if !(0..height as isize).contains(&src_row) {
+                yiq.i[dst_range.clone()].fill(0.0);
+                yiq.q[dst_range].fill(0.0);
+                continue;
+            }
+
+            let src_range = src_row as usize * width..(src_row as usize + 1) * width;
+            shift_row_to(
+                &src_i[src_range.clone()],
+                &mut yiq.i[dst_range.clone()],
+                offset.0,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
+            shift_row_to(
+                &src_q[src_range],
+                &mut yiq.q[dst_range],
+                offset.0,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
+        }
+    }
+
+    fn assert_almost_eq(a: &[f32], b: &[f32], tolerance: f32) {
+        assert_eq!(a.len(), b.len());
+        assert!(
+            a.iter().zip(b).all(|(l, r)| (l - r).abs() <= tolerance),
+            "left={a:?}\nright={b:?}"
+        );
+    }
+
+    #[test]
+    fn plane_noise_matches_reference() {
+        let info = test_info();
+        let width = 13;
+        let height = 7;
+        let settings = FbmNoiseSettings {
+            frequency: 1.9,
+            intensity: 0.42,
+            detail: 4,
+        };
+        let noise_seed = noise_seeds::VIDEO_LUMA;
+
+        let mut plane = vec![0.2; width * height];
+        let mut reference = plane.clone();
+
+        plane_noise(&mut plane, width, &info, &settings, noise_seed);
+        plane_noise_reference(&mut reference, width, &info, &settings, noise_seed);
+
+        assert_almost_eq(&plane, &reference, 1e-6);
+    }
+
+    #[test]
+    fn chroma_delay_matches_reference() {
+        let info = test_info();
+        let width = 12;
+        let height = 8;
+        let mut buffer =
+            vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
+        let mut reference_buffer = buffer.clone();
+
+        let mut yiq = YiqView::from_parts(&mut buffer, (width, height), YiqField::Both);
+        let mut yiq_reference =
+            YiqView::from_parts(&mut reference_buffer, (width, height), YiqField::Both);
+
+        for (idx, (i, q)) in yiq
+            .i
+            .iter_mut()
+            .zip(yiq.q.iter_mut())
+            .enumerate()
+        {
+            *i = ((idx % width) as f32) * 0.1 + (idx / width) as f32;
+            *q = ((idx % width) as f32) * -0.2 + (idx / width) as f32 * 0.5;
+        }
+        yiq_reference.i.copy_from_slice(yiq.i);
+        yiq_reference.q.copy_from_slice(yiq.q);
+
+        let offset = (2.25, -2);
+        chroma_delay(&mut yiq, &info, offset);
+        chroma_delay_reference(&mut yiq_reference, &info, offset);
+
+        assert_almost_eq(yiq.i, yiq_reference.i, 1e-6);
+        assert_almost_eq(yiq.q, yiq_reference.q, 1e-6);
     }
 }

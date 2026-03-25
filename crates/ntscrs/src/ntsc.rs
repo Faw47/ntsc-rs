@@ -9,7 +9,7 @@ use crate::{
     backend::{BackendManager, BackendPreference, FrameDescriptor, RuntimeBackend},
     filter::TransferFunction,
     noise::{Fbm, Simplex, Simplex1d, Simplex2d, add_noise_1d, sample_noise_1d, sample_noise_2d},
-    random::{Geometric, Seeder},
+    random::{FromSeeder, Geometric, Seeder, fmix64},
     settings::standard::*,
     shift::{BoundaryHandling, shift_row, shift_row_to},
     thread_pool::{self, ZipChunks, with_thread_pool},
@@ -607,7 +607,7 @@ mod noise_seeds {
 /// Helper function to apply gradient noise to a single row of a single plane.
 fn video_noise_line(
     row: &mut [f32],
-    seeder: &Seeder,
+    base_seed: u64,
     level: Level,
     index: usize,
     frequency: f32,
@@ -615,7 +615,7 @@ fn video_noise_line(
     detail: u32,
 ) {
     let width = row.len();
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seeder.clone().mix(index as u64).finalize());
+    let mut rng = Xoshiro256PlusPlus::seed_from_u64(fmix64(base_seed.wrapping_add(index as u64)));
     let noise_seed = rng.next_u32();
     let offset = rng.random::<f32>() * width as f32;
 
@@ -633,14 +633,15 @@ fn video_noise_line(
 /// Add gradient noise to an NTSC-encoded (composite) signal.
 fn composite_noise(yiq: &mut YiqView, info: &CommonInfo, noise_settings: &FbmNoiseSettings) {
     let width = yiq.dimensions.0;
-    let seeder = Seeder::new(info.seed)
+    let base_seed = Seeder::new(info.seed)
         .mix(noise_seeds::VIDEO_COMPOSITE)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.y], width).par_for_each(|index, [row]| {
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             noise_settings.frequency / info.horizontal_scale,
@@ -658,12 +659,15 @@ fn plane_noise(
     settings: &FbmNoiseSettings,
     noise_seed: u64,
 ) {
-    let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+    let base_seed = Seeder::new(info.seed)
+        .mix(noise_seed)
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([plane], width).par_for_each(|index, [row]| {
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             settings.frequency / info.horizontal_scale,
@@ -752,14 +756,21 @@ fn head_switching(
     let scratch = &mut yiq.scratch[start_row * width..];
     let cut_off_rows = num_affected_rows.saturating_sub(height);
 
-    let seeder = Seeder::new(info.seed)
+    let base_seed = Seeder::new(info.seed)
         .mix(noise_seeds::HEAD_SWITCHING)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
+
+    let mid_line_seed = Seeder::new(info.seed)
+        .mix(noise_seeds::HEAD_SWITCHING_MID_LINE_JITTER)
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([affected_rows, scratch], width).par_for_each(|index, [row, scratch]| {
         let index = num_affected_rows - (index + cut_off_rows);
         let row_shift = shift * ((index + offset) as f32 / num_rows as f32).powf(1.5);
-        let noisy_shift = (row_shift + (seeder.clone().mix(index).finalize::<f32>() - 0.5))
+        let noisy_shift = (row_shift
+            + (f32::from_seeder(fmix64(base_seed.wrapping_add(index as u64))) - 0.5))
             * info.horizontal_scale;
 
         if index == num_affected_rows
@@ -774,13 +785,9 @@ fn head_switching(
                 info.level,
             );
 
-            let seeder = Seeder::new(info.seed)
-                .mix(noise_seeds::HEAD_SWITCHING_MID_LINE_JITTER)
-                .mix(info.frame_num);
-
             // Average two random numbers to bias the result towards the middle
-            let jitter_rand = (seeder.clone().mix(0).finalize::<f32>()
-                + seeder.clone().mix(1).finalize::<f32>())
+            let jitter_rand = (f32::from_seeder(fmix64(mid_line_seed.wrapping_add(0)))
+                + f32::from_seeder(fmix64(mid_line_seed.wrapping_add(1))))
                 * 0.5;
             let jitter = (jitter_rand - 0.5) * mid_line.jitter;
 
@@ -791,7 +798,8 @@ fn head_switching(
             row[copy_start..].copy_from_slice(&scratch[copy_start..]);
 
             // Add a transient where the head switch is supposed to start
-            let transient_intensity = (seeder.clone().mix(0).finalize::<f32>() + 0.5) * 0.5;
+            let transient_intensity =
+                (f32::from_seeder(fmix64(mid_line_seed.wrapping_add(0))) + 0.5) * 0.5;
             let transient_len = 16.0 * info.horizontal_scale;
 
             for i in copy_start..(copy_start + transient_len.ceil() as usize).min(width) {
@@ -942,7 +950,7 @@ fn tracking_noise(
 
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             0.25 / info.horizontal_scale,
@@ -1653,11 +1661,14 @@ mod tests {
         settings: &FbmNoiseSettings,
         noise_seed: u64,
     ) {
-        let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+        let base_seed = Seeder::new(info.seed)
+            .mix(noise_seed)
+            .mix(info.frame_num)
+            .finalize::<u64>();
         for (index, row) in plane.chunks_exact_mut(width).enumerate() {
             video_noise_line(
                 row,
-                &seeder,
+                base_seed,
                 info.level,
                 index,
                 settings.frequency / info.horizontal_scale,

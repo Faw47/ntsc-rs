@@ -1,0 +1,3 @@
+## 2024-05-20 - SipHasher cloning in hot loops
+**Learning:** `Seeder` cloning and mixing uses SipHasher internally, which is very expensive when done per-pixel or per-row in hot loops. The optimization is to calculate a `base_seed: u64` outside the loop, and use an avalanche function like MurmurHash3's `fmix64(base_seed.wrapping_add(index as u64))` inside the loop.
+**Action:** When working on procedural generation, check if complex hasher states are cloned and modified repeatedly in hot loops. If so, replace them with a single outer calculation and an avalanche function for iteration-specific seeds.

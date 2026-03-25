@@ -20,23 +20,28 @@ use clap::{
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
+use ntsc_rs::{
+    BackendPreference, NtscEffectFullSettings,
+    settings::{ParseSettingsError, SettingsList},
+};
 use ntsc_rs_gui::{
     app::{
-        self, executor::ApplessExecutor, format_eta::format_eta, render_job::{RenderJob, RenderJobState, SharedRenderJob}, render_settings::{
+        self,
+        executor::ApplessExecutor,
+        format_eta::format_eta,
+        render_job::{RenderJob, RenderJobState, SharedRenderJob},
+        render_settings::{
             Ffv1BitDepth, Ffv1Settings, H264Settings, OutputCodec, PngSequenceSettings,
             PngSettings, RenderInterlaceMode, RenderPipelineCodec, RenderPipelineSettings,
             StillImageSettings,
-        }, ui_context::UIContext
+        },
+        ui_context::UIContext,
     },
     gst_utils::{
         clock_format::clock_time_parser,
         init::initialize_gstreamer,
         ntsc_pipeline::{VideoScale, VideoScaleFilter},
     },
-};
-use ntsc_rs::{
-    NtscEffectFullSettings,
-    settings::{ParseSettingsError, SettingsList},
 };
 
 fn parse_settings(
@@ -118,6 +123,29 @@ impl ValueEnum for Ffv1BitDepthArg {
             Ffv1BitDepth::Bits8 => PossibleValue::new("8"),
             Ffv1BitDepth::Bits10 => PossibleValue::new("10"),
             Ffv1BitDepth::Bits12 => PossibleValue::new("12"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct BackendPreferenceArg(BackendPreference);
+
+impl ValueEnum for BackendPreferenceArg {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self(BackendPreference::Auto),
+            Self(BackendPreference::Cpu),
+            Self(BackendPreference::Wgpu),
+            Self(BackendPreference::Cuda),
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self.0 {
+            BackendPreference::Auto => PossibleValue::new("auto"),
+            BackendPreference::Cpu => PossibleValue::new("cpu"),
+            BackendPreference::Wgpu => PossibleValue::new("wgpu"),
+            BackendPreference::Cuda => PossibleValue::new("cuda"),
         })
     }
 }
@@ -249,6 +277,13 @@ pub fn main() -> Result<()> {
                 )
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("backend")
+                .long("backend")
+                .help("Preferred effect backend (phase 1 currently keeps CPU behavior).")
+                .value_parser(EnumValueParser::<BackendPreferenceArg>::new())
+                .default_value("auto"),
+        )
         .next_help_heading("Codec settings")
         .arg(
             Arg::new("codec")
@@ -367,6 +402,10 @@ pub fn main() -> Result<()> {
         filter,
     });
     let interlace = matches.get_flag("interlace");
+    let backend_preference = matches
+        .get_one::<BackendPreferenceArg>("backend")
+        .expect("backend is present")
+        .0;
     let codec = matches
         .get_one::<OutputCodecArg>("codec")
         .expect("codec is present");
@@ -503,6 +542,7 @@ pub fn main() -> Result<()> {
             output_path: output_path.clone(),
             interlacing: RenderInterlaceMode::from_use_field(settings.use_field, interlace),
             effect_settings: settings.into(),
+            backend_preference,
         },
         &StillImageSettings {
             framerate: gstreamer::Fraction::from_integer(framerate as i32),

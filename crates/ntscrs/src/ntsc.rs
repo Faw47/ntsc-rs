@@ -1473,7 +1473,7 @@ impl NtscEffect {
         };
     }
 
-    fn apply_effect_to_all_fields(
+    pub(crate) fn apply_effect_cpu_to_all_fields(
         &self,
         yiq: &mut YiqView,
         frame_num: usize,
@@ -1518,7 +1518,7 @@ impl NtscEffect {
 
     /// Apply the effect to YIQ image data.
     pub fn apply_effect_to_yiq(&self, yiq: &mut YiqView, frame_num: usize, scale_factor: [f32; 2]) {
-        with_thread_pool(|| self.apply_effect_to_all_fields(yiq, frame_num, scale_factor));
+        with_thread_pool(|| self.apply_effect_cpu_to_all_fields(yiq, frame_num, scale_factor));
     }
 
     /// Apply the effect to a buffer which contains pixels in the given format.

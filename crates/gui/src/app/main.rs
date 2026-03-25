@@ -94,7 +94,7 @@ fn parse_decimal_or_percentage(input: &str, threshold: f64) -> Option<f64> {
 #[cfg(not(target_os = "macos"))]
 static ICON: &[u8] = include_bytes!("../../../../assets/icon.png");
 
-pub fn run() -> Result<(), Box<dyn Error>> {
+pub fn run(initial_file: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
     let viewport = egui::ViewportBuilder::default().with_inner_size([1300.0, 720.0]);
@@ -115,7 +115,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     Ok(eframe::run_native(
         NtscApp::APP_ID,
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             // Load fonts and GStreamer in separate threads. Cascade the JoinHandles.
             let fonts_thread_handle = {
@@ -200,6 +200,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 render_settings,
                 scale_settings,
                 init_state,
+                initial_file,
             )))
         }),
     )?)
@@ -218,6 +219,7 @@ impl NtscApp {
         render_settings: RenderSettings,
         scale_settings: VideoScaleState,
         gstreamer_init: GstreamerInitState,
+        initial_file: Option<PathBuf>,
     ) -> Self {
         Self {
             gstreamer_init,
@@ -247,6 +249,7 @@ impl NtscApp {
             license_dialog_open: false,
             update_dialog: UpdateDialogState::Closed,
             image_sequence_dialog_queued_render_job: None,
+            initial_file_to_load: initial_file,
         }
     }
 
@@ -2385,6 +2388,12 @@ impl eframe::App for NtscApp {
             GstreamerInitState::Initialized(Err(error)) => {
                 Self::show_error_screen(ctx, error);
                 return;
+            }
+            GstreamerInitState::Initialized(Ok(())) => {
+                // Load initial file if provided via CLI
+                if let Some(file_path) = self.initial_file_to_load.take() {
+                    let _ = self.load_video(ctx, file_path);
+                }
             }
             _ => {}
         }

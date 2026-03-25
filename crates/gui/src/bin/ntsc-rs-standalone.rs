@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::error::Error;
+use std::path::PathBuf;
 
 use ntsc_rs_gui::app::main::run;
 
@@ -18,5 +19,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }));
 
-    run()
+    let file_path = std::env::args().nth(1).map(PathBuf::from);
+    run(file_path)
 }

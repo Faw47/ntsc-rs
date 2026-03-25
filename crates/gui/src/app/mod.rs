@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 
 use app_state::GstreamerInitState;
 use eframe::egui::util::undoer::Undoer;
@@ -55,4 +56,5 @@ pub struct NtscApp {
     pub image_sequence_dialog_queued_render_job: Option<
         Box<dyn FnOnce(&mut Self) -> Result<render_job::RenderJob, error::ApplicationError>>,
     >,
+    pub initial_file_to_load: Option<PathBuf>,
 }

@@ -12,21 +12,33 @@ use std::{
     time::{Duration, Instant},
 };
 
+use std::ffi::OsStr;
+
 use clap::{
-    Arg, ArgAction, ArgGroup, ValueEnum,
-    builder::{EnumValueParser, PathBufValueParser, PossibleValue},
+    Arg, ArgAction, ArgGroup, Command, ValueEnum,
+    builder::{EnumValueParser, PathBufValueParser, PossibleValue, StringValueParser, TypedValueParser},
     command,
+    error::{ContextKind, ContextValue, Error, ErrorKind},
 };
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
+use ntsc_rs::{
+    BackendPreference, NtscEffectFullSettings,
+    settings::SettingsList,
+};
 use ntsc_rs_gui::{
     app::{
-        self, executor::ApplessExecutor, format_eta::format_eta, render_job::{RenderJob, RenderJobState, SharedRenderJob}, render_settings::{
+        self,
+        executor::ApplessExecutor,
+        format_eta::format_eta,
+        render_job::{RenderJob, RenderJobState, SharedRenderJob},
+        render_settings::{
             Ffv1BitDepth, Ffv1Settings, H264Settings, OutputCodec, PngSequenceSettings,
             PngSettings, RenderInterlaceMode, RenderPipelineCodec, RenderPipelineSettings,
             StillImageSettings,
-        }, ui_context::UIContext
+        },
+        ui_context::UIContext,
     },
     gst_utils::{
         clock_format::clock_time_parser,
@@ -34,16 +46,43 @@ use ntsc_rs_gui::{
         ntsc_pipeline::{VideoScale, VideoScaleFilter},
     },
 };
-use ntsc_rs::{
-    NtscEffectFullSettings,
-    settings::{ParseSettingsError, SettingsList},
-};
 
-fn parse_settings(
-    settings_list: &SettingsList<NtscEffectFullSettings>,
-    json: &str,
-) -> Result<NtscEffectFullSettings, ParseSettingsError> {
-    settings_list.from_json(json)
+#[derive(Clone)]
+struct SettingsParser {
+    settings_list: SettingsList<NtscEffectFullSettings>,
+}
+
+impl TypedValueParser for SettingsParser {
+    type Value = NtscEffectFullSettings;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &OsStr,
+    ) -> std::result::Result<Self::Value, Error> {
+        let inner = StringValueParser::new();
+        let val = inner.parse_ref(cmd, arg, value)?;
+
+        self.settings_list.from_json(&val).map_err(|e| {
+            let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+            if let Some(arg) = arg {
+                err.insert(
+                    ContextKind::InvalidArg,
+                    ContextValue::String(arg.to_string()),
+                );
+            }
+            err.insert(
+                ContextKind::InvalidValue,
+                ContextValue::String(val),
+            );
+            err.insert(
+                ContextKind::Usage,
+                ContextValue::String(format!("Failed to parse settings: {}", e)),
+            );
+            err
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +161,29 @@ impl ValueEnum for Ffv1BitDepthArg {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct BackendPreferenceArg(BackendPreference);
+
+impl ValueEnum for BackendPreferenceArg {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self(BackendPreference::Auto),
+            Self(BackendPreference::Cpu),
+            Self(BackendPreference::Wgpu),
+            Self(BackendPreference::Cuda),
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self.0 {
+            BackendPreference::Auto => PossibleValue::new("auto"),
+            BackendPreference::Cpu => PossibleValue::new("cpu"),
+            BackendPreference::Wgpu => PossibleValue::new("wgpu"),
+            BackendPreference::Cuda => PossibleValue::new("cuda"),
+        })
+    }
+}
+
 fn clock_time_parser_clap(input: &str) -> Result<gstreamer::ClockTime> {
     match clock_time_parser(input) {
         Some(ms) => Ok(gstreamer::ClockTime::from_mseconds(ms as u64)),
@@ -146,9 +208,6 @@ macro_rules! warn {
 pub fn main() -> Result<()> {
     color_eyre::install()?;
     let settings_list = SettingsList::<NtscEffectFullSettings>::new();
-    let settings_list_for_parser = settings_list.clone();
-
-    let parse_standard_settings = move |json: &str| parse_settings(&settings_list_for_parser, json);
 
     let command = command!()
         .name("ntsc-rs")
@@ -207,10 +266,11 @@ pub fn main() -> Result<()> {
             Arg::new("settings-json")
                 .short('j')
                 .long("settings-json")
-                // TODO: ValueParser that wraps ntsc_rs::settings
                 .help("JSON string for an effect settings preset.")
                 .conflicts_with("settings-path")
-                .value_parser(parse_standard_settings.clone()),
+                .value_parser(SettingsParser {
+                    settings_list: settings_list.clone(),
+                }),
         )
         .group(ArgGroup::new("settings").args(["settings-path", "settings-json"]))
         .arg(
@@ -248,6 +308,13 @@ pub fn main() -> Result<()> {
                      that's already interlaced.",
                 )
                 .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("backend")
+                .long("backend")
+                .help("Preferred effect backend (phase 1 currently keeps CPU behavior).")
+                .value_parser(EnumValueParser::<BackendPreferenceArg>::new())
+                .default_value("auto"),
         )
         .next_help_heading("Codec settings")
         .arg(
@@ -330,7 +397,7 @@ pub fn main() -> Result<()> {
     let matches = command.get_matches();
 
     let settings = if let Some(settings_path) = matches.get_one::<PathBuf>("settings-path") {
-        parse_standard_settings(
+        settings_list.from_json(
             std::str::from_utf8(&fs::read(settings_path).wrap_err("Failed to open settings file")?)
                 .wrap_err("Settings file is not valid UTF-8")?,
         )
@@ -367,6 +434,10 @@ pub fn main() -> Result<()> {
         filter,
     });
     let interlace = matches.get_flag("interlace");
+    let backend_preference = matches
+        .get_one::<BackendPreferenceArg>("backend")
+        .expect("backend is present")
+        .0;
     let codec = matches
         .get_one::<OutputCodecArg>("codec")
         .expect("codec is present");
@@ -503,6 +574,7 @@ pub fn main() -> Result<()> {
             output_path: output_path.clone(),
             interlacing: RenderInterlaceMode::from_use_field(settings.use_field, interlace),
             effect_settings: settings.into(),
+            backend_preference,
         },
         &StillImageSettings {
             framerate: gstreamer::Fraction::from_integer(framerate as i32),
@@ -551,11 +623,10 @@ impl ApplessExecutor for CliExecutor {
         let inner = &self.0;
         inner
             .spawn(async {
-                // TODO: display these errors
                 if let Some(cb) = future.await {
-                    cb()
-                } else {
-                    Ok(())
+                    if let Err(e) = cb() {
+                        eprintln!("{}", style(format!("Error: {e}")).red());
+                    }
                 }
             })
             .detach();

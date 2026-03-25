@@ -6,6 +6,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
 use crate::{
+    backend::{BackendManager, BackendPreference, FrameDescriptor, RuntimeBackend},
     filter::TransferFunction,
     noise::{Fbm, Simplex, Simplex1d, Simplex2d, add_noise_1d, sample_noise_1d, sample_noise_2d},
     random::{Geometric, Seeder},
@@ -701,14 +702,27 @@ fn chroma_phase_error(yiq: &mut YiqView, intensity: f32) {
 /// Add per-scanline chroma phase error.
 fn chroma_phase_noise(yiq: &mut YiqView, info: &CommonInfo, intensity: f32) {
     let width = yiq.dimensions.0;
-    let seeder = Seeder::new(info.seed)
+    let seed = Seeder::new(info.seed)
         .mix(noise_seeds::VIDEO_CHROMA_PHASE)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.i, yiq.q], width).par_for_each(|index, [i, q]| {
+        // Simple hash to generate a per-line random value from the base seed and line index.
+        // This is much faster than cloning and finalizing a SipHasher or re-seeding Xoshiro for every line.
+        let mut h = seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
+
+        // Map the u64 to a f32 in the range [0.0, 1.0)
+        let val = (h as f32) / (u64::MAX as f32 + 1.0);
+
         // Phase shift angle in radians. Mapped so that an intensity of 1.0 is a phase shift ranging from a full
         // rotation to the left, to a full rotation to the right.
-        let phase_shift = (seeder.clone().mix(index).finalize::<f32>() - 0.5) * 2.0 * intensity;
+        let phase_shift = (val - 0.5) * 2.0 * intensity;
 
         chroma_phase_offset_line(i, q, phase_shift);
     });
@@ -909,6 +923,8 @@ fn tracking_noise(
         shift_noise,
     );
 
+    let base_seed = seeder.clone().finalize::<u64>();
+
     ZipChunks::new([affected_rows], width).par_for_each(|index, [row]| {
         let index = index + cut_off_rows;
         // This iterates from the top down. Increase the intensity as we approach the bottom of the picture.
@@ -934,9 +950,15 @@ fn tracking_noise(
             1,
         );
 
+        let mut h = base_seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
         row_speckles(
             row,
-            &mut Xoshiro256PlusPlus::seed_from_u64(seeder.clone().mix(index).finalize()),
+            &mut Xoshiro256PlusPlus::seed_from_u64(h),
             snow_intensity * intensity_scale.powi(2),
             snow_anisotropy,
             info.horizontal_scale,
@@ -946,16 +968,22 @@ fn tracking_noise(
 
 /// Add random bits of "snow" to an NTSC-encoded signal.
 fn snow(yiq: &mut YiqView, info: &CommonInfo, intensity: f32, anisotropy: f32) {
-    let seeder = Seeder::new(info.seed)
+    let seed = Seeder::new(info.seed)
         .mix(noise_seeds::SNOW)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.y], yiq.dimensions.0).par_for_each(|index, [row]| {
-        let line_seed = seeder.clone().mix(index);
+        let mut h = seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
 
         row_speckles(
             row,
-            &mut Xoshiro256PlusPlus::seed_from_u64(line_seed.finalize()),
+            &mut Xoshiro256PlusPlus::seed_from_u64(h),
             intensity,
             anisotropy,
             info.horizontal_scale,
@@ -1473,7 +1501,7 @@ impl NtscEffect {
         };
     }
 
-    fn apply_effect_to_all_fields(
+    pub(crate) fn apply_effect_cpu_to_all_fields(
         &self,
         yiq: &mut YiqView,
         frame_num: usize,
@@ -1518,7 +1546,60 @@ impl NtscEffect {
 
     /// Apply the effect to YIQ image data.
     pub fn apply_effect_to_yiq(&self, yiq: &mut YiqView, frame_num: usize, scale_factor: [f32; 2]) {
-        with_thread_pool(|| self.apply_effect_to_all_fields(yiq, frame_num, scale_factor));
+        with_thread_pool(|| self.apply_effect_cpu_to_all_fields(yiq, frame_num, scale_factor));
+    }
+
+    /// Apply the effect to YIQ image data using runtime backend selection.
+    ///
+    /// If backend initialization or execution fails, this will log and transparently fall back to the CPU path.
+    pub fn apply_effect_to_yiq_with_runtime(
+        &self,
+        yiq: &mut YiqView,
+        frame_num: usize,
+        scale_factor: [f32; 2],
+        preference: BackendPreference,
+        manager: &BackendManager,
+        mut logger: impl FnMut(&str),
+    ) -> crate::backend::RuntimeBackendReport {
+        let frame_desc = FrameDescriptor {
+            width: yiq.dimensions.0,
+            height: yiq.dimensions.1,
+            is_interleaved: matches!(
+                yiq.field,
+                YiqField::InterleavedUpper | YiqField::InterleavedLower
+            ),
+        };
+
+        let mut selected = match manager.select_and_init(preference, frame_desc, &mut logger) {
+            Ok(handle) => handle,
+            Err(err) => {
+                logger(&format!(
+                    "runtime backend selection failed: {}",
+                    err.message
+                ));
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+                let mut report = err.report;
+                report.selected_backend = RuntimeBackend::Cpu;
+                return report;
+            }
+        };
+
+        match selected.backend {
+            RuntimeBackend::Cpu => {
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+            }
+            RuntimeBackend::Wgpu | RuntimeBackend::Cuda => {
+                selected.report.reject(
+                    selected.backend,
+                    "init failure: runtime execution unavailable",
+                );
+                logger("selected runtime backend failed during execution, falling back to CPU");
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+                selected.report.selected_backend = RuntimeBackend::Cpu;
+            }
+        }
+
+        selected.report
     }
 
     /// Apply the effect to a buffer which contains pixels in the given format.
@@ -1548,5 +1629,136 @@ impl NtscEffect {
             crate::yiq_fielding::DeinterlaceMode::Bob,
             (),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_info() -> CommonInfo {
+        CommonInfo {
+            level: Level::new(),
+            seed: 0xA11C_E5EED,
+            frame_num: 13,
+            horizontal_scale: 1.25,
+            vertical_scale: 0.75,
+        }
+    }
+
+    fn plane_noise_reference(
+        plane: &mut [f32],
+        width: usize,
+        info: &CommonInfo,
+        settings: &FbmNoiseSettings,
+        noise_seed: u64,
+    ) {
+        let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+        for (index, row) in plane.chunks_exact_mut(width).enumerate() {
+            video_noise_line(
+                row,
+                &seeder,
+                info.level,
+                index,
+                settings.frequency / info.horizontal_scale,
+                settings.intensity,
+                settings.detail.try_into().unwrap_or_default(),
+            );
+        }
+    }
+
+    fn chroma_delay_reference(yiq: &mut YiqView, info: &CommonInfo, offset: (f32, isize)) {
+        let offset = (
+            offset.0 * info.horizontal_scale,
+            ((offset.1 as f32) * info.vertical_scale).round() as isize,
+        );
+        let width = yiq.dimensions.0;
+        let height = yiq.num_rows();
+
+        let src_i = yiq.i.to_vec();
+        let src_q = yiq.q.to_vec();
+
+        for dst_row in 0..height {
+            let src_row = dst_row as isize - offset.1;
+            let dst_range = dst_row * width..(dst_row + 1) * width;
+
+            if !(0..height as isize).contains(&src_row) {
+                yiq.i[dst_range.clone()].fill(0.0);
+                yiq.q[dst_range].fill(0.0);
+                continue;
+            }
+
+            let src_range = src_row as usize * width..(src_row as usize + 1) * width;
+            shift_row_to(
+                &src_i[src_range.clone()],
+                &mut yiq.i[dst_range.clone()],
+                offset.0,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
+            shift_row_to(
+                &src_q[src_range],
+                &mut yiq.q[dst_range],
+                offset.0,
+                BoundaryHandling::Constant(0.0),
+                info.level,
+            );
+        }
+    }
+
+    fn assert_almost_eq(a: &[f32], b: &[f32], tolerance: f32) {
+        assert_eq!(a.len(), b.len());
+        assert!(
+            a.iter().zip(b).all(|(l, r)| (l - r).abs() <= tolerance),
+            "left={a:?}\nright={b:?}"
+        );
+    }
+
+    #[test]
+    fn plane_noise_matches_reference() {
+        let info = test_info();
+        let width = 13;
+        let height = 7;
+        let settings = FbmNoiseSettings {
+            frequency: 1.9,
+            intensity: 0.42,
+            detail: 4,
+        };
+        let noise_seed = noise_seeds::VIDEO_LUMA;
+
+        let mut plane = vec![0.2; width * height];
+        let mut reference = plane.clone();
+
+        plane_noise(&mut plane, width, &info, &settings, noise_seed);
+        plane_noise_reference(&mut reference, width, &info, &settings, noise_seed);
+
+        assert_almost_eq(&plane, &reference, 1e-6);
+    }
+
+    #[test]
+    fn chroma_delay_matches_reference() {
+        let info = test_info();
+        let width = 12;
+        let height = 8;
+        let mut buffer = vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
+        let mut reference_buffer = buffer.clone();
+
+        let mut yiq = YiqView::from_parts(&mut buffer, (width, height), YiqField::Both);
+        let mut yiq_reference =
+            YiqView::from_parts(&mut reference_buffer, (width, height), YiqField::Both);
+
+        for (idx, (i, q)) in yiq.i.iter_mut().zip(yiq.q.iter_mut()).enumerate() {
+            *i = ((idx % width) as f32) * 0.1 + (idx / width) as f32;
+            *q = ((idx % width) as f32) * -0.2 + (idx / width) as f32 * 0.5;
+        }
+        yiq_reference.i.copy_from_slice(yiq.i);
+        yiq_reference.q.copy_from_slice(yiq.q);
+
+        let offset = (2.25, -2);
+        chroma_delay(&mut yiq, &info, offset);
+        chroma_delay_reference(&mut yiq_reference, &info, offset);
+
+        assert_almost_eq(yiq.i, yiq_reference.i, 1e-6);
+        assert_almost_eq(yiq.q, yiq_reference.q, 1e-6);
     }
 }

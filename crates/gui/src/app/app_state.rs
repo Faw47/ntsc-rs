@@ -78,6 +78,7 @@ pub enum LeftPanelState {
     #[default]
     EffectSettings,
     RenderSettings,
+    Presets,
 }
 
 /// Used for the loading screen (and error screen if GStreamer fails to initialize). We initialize GStreamer on its own

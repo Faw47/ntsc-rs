@@ -101,7 +101,7 @@ impl TransferFunction {
     }
 
     #[inline(always)]
-    pub fn num_den(&self) -> (&[f32], &[f32]) {
+    fn num_den(&self) -> (&[f32], &[f32]) {
         let len = self.len();
         (&self.coeffs[..len], &self.coeffs[4..4 + len - 1])
     }

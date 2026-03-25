@@ -23,7 +23,7 @@ use allocator_api2::{
 };
 
 use ntsc_rs::{
-    NtscEffect,
+    BackendPreference, NtscEffect, apply_effect_to_yiq_with_backend_preference,
     settings::{
         EnumValue, SettingDescriptor, SettingID, SettingKind, Settings, SettingsList,
         standard::NtscEffectFullSettings,
@@ -39,6 +39,11 @@ unsafe impl Sync for OfxPlugin {}
 
 static PLUGIN_INFO: OnceLock<OfxPlugin> = OnceLock::new();
 static shared_data: OnceLock<SharedData> = OnceLock::new();
+static BACKEND_PREF: OnceLock<Option<BackendPreference>> = OnceLock::new();
+
+fn backend_preference_for_plugin() -> Option<BackendPreference> {
+    *BACKEND_PREF.get_or_init(|| BackendPreference::from_env_var("NTSCRS_BACKEND"))
+}
 
 struct HostInfo {
     // From the OpenFX api docs:
@@ -1196,8 +1201,13 @@ impl<'a> EffectApplicationParams<'a> {
             yiq_view.set_from_strided_buffer_maybe_uninit::<S, T, _>(srcData, blit_info, ());
         }
 
-        self.effect
-            .apply_effect_to_yiq(&mut yiq_view, self.frame_num, self.proxy_scale);
+        apply_effect_to_yiq_with_backend_preference(
+            self.effect,
+            &mut yiq_view,
+            self.frame_num,
+            self.proxy_scale,
+            backend_preference_for_plugin().unwrap_or_default(),
+        );
 
         Ok(EffectStorageParams {
             yiq_data: ntsc_buf,

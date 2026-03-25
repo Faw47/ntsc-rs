@@ -199,25 +199,21 @@ fn ceil_mul_rational(n: i32, scale: RationalScale) -> i32 {
 }
 
 unsafe fn transmute_slice<T, U>(slice: &[T]) -> &[U] {
-    let src_size = mem::size_of::<T>();
-    let dst_size = mem::size_of::<U>();
-    let new_len = if dst_size > src_size {
-        slice.len() / (dst_size / src_size)
-    } else {
-        slice.len() * (src_size / dst_size)
-    };
-    unsafe { std::slice::from_raw_parts(slice.as_ptr() as _, new_len) }
+    let (prefix, middle, suffix) = unsafe { slice.align_to::<U>() };
+    assert!(
+        prefix.is_empty() && suffix.is_empty(),
+        "Unaligned transmute or size mismatch"
+    );
+    middle
 }
 
 unsafe fn transmute_slice_mut<T, U>(slice: &mut [T]) -> &mut [U] {
-    let src_size = mem::size_of::<T>();
-    let dst_size = mem::size_of::<U>();
-    let new_len = if dst_size > src_size {
-        slice.len() / (dst_size / src_size)
-    } else {
-        slice.len() * (src_size / dst_size)
-    };
-    unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr() as _, new_len) }
+    let (prefix, middle, suffix) = unsafe { slice.align_to_mut::<U>() };
+    assert!(
+        prefix.is_empty() && suffix.is_empty(),
+        "Unaligned transmute or size mismatch"
+    );
+    middle
 }
 
 impl Plugin {

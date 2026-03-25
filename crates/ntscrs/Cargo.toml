@@ -42,3 +42,7 @@ workspace = true
 [[bench]]
 name = "backend_profile"
 harness = false
+
+[[bench]]
+name = "snow_profile"
+harness = false

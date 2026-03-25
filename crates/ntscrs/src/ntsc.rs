@@ -923,6 +923,8 @@ fn tracking_noise(
         shift_noise,
     );
 
+    let base_seed = seeder.clone().finalize::<u64>();
+
     ZipChunks::new([affected_rows], width).par_for_each(|index, [row]| {
         let index = index + cut_off_rows;
         // This iterates from the top down. Increase the intensity as we approach the bottom of the picture.
@@ -948,9 +950,15 @@ fn tracking_noise(
             1,
         );
 
+        let mut h = base_seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
         row_speckles(
             row,
-            &mut Xoshiro256PlusPlus::seed_from_u64(seeder.clone().mix(index).finalize()),
+            &mut Xoshiro256PlusPlus::seed_from_u64(h),
             snow_intensity * intensity_scale.powi(2),
             snow_anisotropy,
             info.horizontal_scale,
@@ -960,16 +968,22 @@ fn tracking_noise(
 
 /// Add random bits of "snow" to an NTSC-encoded signal.
 fn snow(yiq: &mut YiqView, info: &CommonInfo, intensity: f32, anisotropy: f32) {
-    let seeder = Seeder::new(info.seed)
+    let seed = Seeder::new(info.seed)
         .mix(noise_seeds::SNOW)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.y], yiq.dimensions.0).par_for_each(|index, [row]| {
-        let line_seed = seeder.clone().mix(index);
+        let mut h = seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
 
         row_speckles(
             row,
-            &mut Xoshiro256PlusPlus::seed_from_u64(line_seed.finalize()),
+            &mut Xoshiro256PlusPlus::seed_from_u64(h),
             intensity,
             anisotropy,
             info.horizontal_scale,
@@ -1726,20 +1740,14 @@ mod tests {
         let info = test_info();
         let width = 12;
         let height = 8;
-        let mut buffer =
-            vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
+        let mut buffer = vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
         let mut reference_buffer = buffer.clone();
 
         let mut yiq = YiqView::from_parts(&mut buffer, (width, height), YiqField::Both);
         let mut yiq_reference =
             YiqView::from_parts(&mut reference_buffer, (width, height), YiqField::Both);
 
-        for (idx, (i, q)) in yiq
-            .i
-            .iter_mut()
-            .zip(yiq.q.iter_mut())
-            .enumerate()
-        {
+        for (idx, (i, q)) in yiq.i.iter_mut().zip(yiq.q.iter_mut()).enumerate() {
             *i = ((idx % width) as f32) * 0.1 + (idx / width) as f32;
             *q = ((idx % width) as f32) * -0.2 + (idx / width) as f32 * 0.5;
         }

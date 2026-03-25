@@ -6,6 +6,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 
 use crate::{
+    backend::{BackendManager, BackendPreference, FrameDescriptor, RuntimeBackend},
     filter::TransferFunction,
     noise::{Fbm, Simplex, Simplex1d, Simplex2d, add_noise_1d, sample_noise_1d, sample_noise_2d},
     random::{Geometric, Seeder},
@@ -1519,6 +1520,59 @@ impl NtscEffect {
     /// Apply the effect to YIQ image data.
     pub fn apply_effect_to_yiq(&self, yiq: &mut YiqView, frame_num: usize, scale_factor: [f32; 2]) {
         with_thread_pool(|| self.apply_effect_to_all_fields(yiq, frame_num, scale_factor));
+    }
+
+    /// Apply the effect to YIQ image data using runtime backend selection.
+    ///
+    /// If backend initialization or execution fails, this will log and transparently fall back to the CPU path.
+    pub fn apply_effect_to_yiq_with_runtime(
+        &self,
+        yiq: &mut YiqView,
+        frame_num: usize,
+        scale_factor: [f32; 2],
+        preference: BackendPreference,
+        manager: &BackendManager,
+        mut logger: impl FnMut(&str),
+    ) -> crate::backend::RuntimeBackendReport {
+        let frame_desc = FrameDescriptor {
+            width: yiq.dimensions.0,
+            height: yiq.dimensions.1,
+            is_interleaved: matches!(
+                yiq.field,
+                YiqField::InterleavedUpper | YiqField::InterleavedLower
+            ),
+        };
+
+        let mut selected = match manager.select_and_init(preference, frame_desc, &mut logger) {
+            Ok(handle) => handle,
+            Err(err) => {
+                logger(&format!(
+                    "runtime backend selection failed: {}",
+                    err.message
+                ));
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+                let mut report = err.report;
+                report.selected_backend = RuntimeBackend::Cpu;
+                return report;
+            }
+        };
+
+        match selected.backend {
+            RuntimeBackend::Cpu => {
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+            }
+            RuntimeBackend::Wgpu | RuntimeBackend::Cuda => {
+                selected.report.reject(
+                    selected.backend,
+                    "init failure: runtime execution unavailable",
+                );
+                logger("selected runtime backend failed during execution, falling back to CPU");
+                self.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+                selected.report.selected_backend = RuntimeBackend::Cpu;
+            }
+        }
+
+        selected.report
     }
 
     /// Apply the effect to a buffer which contains pixels in the given format.

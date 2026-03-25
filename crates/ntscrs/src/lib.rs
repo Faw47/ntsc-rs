@@ -1,3 +1,4 @@
+mod backend;
 mod filter;
 mod noise;
 mod ntsc;
@@ -8,3 +9,8 @@ mod thread_pool;
 pub mod yiq_fielding;
 
 pub use settings::standard::{NtscEffect, NtscEffectFullSettings};
+
+pub use backend::{
+    BackendManager, BackendPreference, FrameDescriptor, RuntimeBackend, RuntimeBackendHandle,
+    RuntimeBackendReport, RuntimeInitError,
+};

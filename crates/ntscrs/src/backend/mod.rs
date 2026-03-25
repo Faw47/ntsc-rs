@@ -1,3 +1,5 @@
+#[cfg(feature = "wgpu-backend")]
+pub mod wgpu;
 mod cpu;
 #[cfg(feature = "wgpu")]
 mod pipeline;

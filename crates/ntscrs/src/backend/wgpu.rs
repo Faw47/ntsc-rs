@@ -47,7 +47,8 @@ impl WgpuBackend {
             ));
         }
 
-        // Skeleton execution path: iterate the pass graph and execute the single currently supported pass.
+        // Skeleton execution path: iterate the pass graph and execute
+        // the single currently supported pass.
         for node in self.graph.passes() {
             match node.pass {
                 GpuPass::ApplyNtscEffectField => {

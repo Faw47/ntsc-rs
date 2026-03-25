@@ -25,6 +25,7 @@ image = { version = "0.25.1", default-features = false, features = ["png"] }
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon-core", "dep:num_cpus"]
+wgpu = []
 
 [[bench]]
 name = "filter_profile"

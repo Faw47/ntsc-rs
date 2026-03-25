@@ -320,7 +320,10 @@ impl NtscApp {
             .property("ctx", egui_ctx)
             .property(
                 "settings",
-                NtscFilterSettings((&self.effect_settings).into()),
+                NtscFilterSettings {
+                    effect: (&self.effect_settings).into(),
+                    backend_preference: None,
+                },
             )
             .property(
                 "preview-mode",
@@ -509,7 +512,13 @@ impl NtscApp {
             } else {
                 self.effect_settings.clone()
             };
-            egui_sink.set_property("settings", NtscFilterSettings(effect_settings.into()));
+            egui_sink.set_property(
+                "settings",
+                NtscFilterSettings {
+                    effect: effect_settings.into(),
+                    backend_preference: None,
+                },
+            );
         }
     }
 
@@ -1633,6 +1642,7 @@ impl NtscApp {
                                             output_path: handle.into(),
                                             interlacing: RenderInterlaceMode::Progressive,
                                             effect_settings: (&app.effect_settings).into(),
+                                            backend_preference: ntsc_rs::BackendPreference::Auto,
                                         },
                                     );
                                     if let Ok(job) = res {

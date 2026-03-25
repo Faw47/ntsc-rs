@@ -93,7 +93,8 @@ impl EguiSink {
             image.as_raw_mut(),
             out_stride,
             rect,
-            &self.settings.lock().unwrap().0,
+            &self.settings.lock().unwrap().effect,
+            None,
         )?;
 
         Ok(())

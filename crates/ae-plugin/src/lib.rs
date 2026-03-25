@@ -8,12 +8,14 @@ use std::{
     fs::File,
     mem::{self, MaybeUninit},
     num::NonZero,
+    sync::OnceLock,
 };
 
 use after_effects::{self as ae};
 use handle::SliceHandle;
 use ntsc_rs::{
-    NtscEffect, NtscEffectFullSettings,
+    BackendPreference, NtscEffect, NtscEffectFullSettings,
+    apply_effect_to_yiq_with_backend_preference,
     settings::{
         EnumValue, SettingDescriptor, SettingField, SettingID, SettingKind, Settings, SettingsList,
         standard::UseField,
@@ -27,6 +29,11 @@ use window_handle::WindowAndDisplayHandle;
 
 struct Plugin {
     settings: SettingsList<NtscEffectFullSettings>,
+}
+
+fn backend_preference_for_plugin() -> Option<BackendPreference> {
+    static BACKEND_PREF: OnceLock<Option<BackendPreference>> = OnceLock::new();
+    *BACKEND_PREF.get_or_init(|| BackendPreference::from_env_var("NTSCRS_BACKEND"))
 }
 
 impl Default for Plugin {
@@ -478,7 +485,13 @@ impl Plugin {
         } else {
             [in_data.downsample_x(), in_data.downsample_y()].map(|factor| factor.into())
         };
-        effect.apply_effect_to_yiq(&mut view, frame_num, scale_factors);
+        apply_effect_to_yiq_with_backend_preference(
+            &effect,
+            &mut view,
+            frame_num,
+            scale_factors,
+            backend_preference_for_plugin().unwrap_or_default(),
+        );
 
         match out_pixel_format {
             NtscrsPixelFormat::Xrgb8 => {

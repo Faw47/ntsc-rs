@@ -292,7 +292,10 @@ impl RenderJob {
                 let video_ntsc = gstreamer::ElementFactory::make("ntscfilter")
                     .property(
                         "settings",
-                        NtscFilterSettings(settings_video_closure.effect_settings.clone()),
+                        NtscFilterSettings {
+                            effect: settings_video_closure.effect_settings.clone(),
+                            backend_preference: Some(settings_video_closure.backend_preference),
+                        },
                     )
                     .build()?;
                 elems.push(video_ntsc.clone());

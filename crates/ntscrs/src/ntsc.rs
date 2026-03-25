@@ -1726,20 +1726,14 @@ mod tests {
         let info = test_info();
         let width = 12;
         let height = 8;
-        let mut buffer =
-            vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
+        let mut buffer = vec![0.0; YiqView::buf_length_for((width, height), YiqField::Both)];
         let mut reference_buffer = buffer.clone();
 
         let mut yiq = YiqView::from_parts(&mut buffer, (width, height), YiqField::Both);
         let mut yiq_reference =
             YiqView::from_parts(&mut reference_buffer, (width, height), YiqField::Both);
 
-        for (idx, (i, q)) in yiq
-            .i
-            .iter_mut()
-            .zip(yiq.q.iter_mut())
-            .enumerate()
-        {
+        for (idx, (i, q)) in yiq.i.iter_mut().zip(yiq.q.iter_mut()).enumerate() {
             *i = ((idx % width) as f32) * 0.1 + (idx / width) as f32;
             *q = ((idx % width) as f32) * -0.2 + (idx / width) as f32 * 0.5;
         }

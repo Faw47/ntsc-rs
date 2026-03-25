@@ -3,7 +3,7 @@ mod tests {
     use crate::{
         gpu::{BackendType, runner::NtscEffectRunner},
         settings::standard::NtscEffect,
-        yiq_fielding::{YiqField, YiqOwned, YiqView, Rgbx},
+        yiq_fielding::{Rgbx, YiqField, YiqOwned, YiqView},
     };
 
     #[test]

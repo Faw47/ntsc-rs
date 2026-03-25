@@ -1077,3 +1077,88 @@ impl<'a> From<&'a mut YiqOwned> for YiqView<'a> {
         YiqView::from_parts(&mut value.data, value.dimensions, value.field)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::UseField;
+
+    #[test]
+    fn test_max_buf_length() {
+        let width = 10;
+
+        // Both, InterleavedUpper, InterleavedLower should return the full height
+        for field in [
+            UseField::Both,
+            UseField::InterleavedUpper,
+            UseField::InterleavedLower,
+        ] {
+            assert_eq!(
+                YiqView::max_buf_length_for((width, 1), field),
+                width * 1 * 4
+            );
+            assert_eq!(
+                YiqView::max_buf_length_for((width, 2), field),
+                width * 2 * 4
+            );
+            assert_eq!(
+                YiqView::max_buf_length_for((width, 3), field),
+                width * 3 * 4
+            );
+        }
+
+        // Upper field: ceil(height / 2)
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 1), UseField::Upper),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 2), UseField::Upper),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 3), UseField::Upper),
+            width * 2 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 4), UseField::Upper),
+            width * 2 * 4
+        );
+
+        // Lower field: max(1, floor(height / 2))
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 1), UseField::Lower),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 2), UseField::Lower),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 3), UseField::Lower),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 4), UseField::Lower),
+            width * 2 * 4
+        );
+
+        // Alternating: max(Upper, Lower)
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 1), UseField::Alternating),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 2), UseField::Alternating),
+            width * 1 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 3), UseField::Alternating),
+            width * 2 * 4
+        );
+        assert_eq!(
+            YiqView::max_buf_length_for((width, 4), UseField::Alternating),
+            width * 2 * 4
+        );
+    }
+}

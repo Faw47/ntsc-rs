@@ -1,5 +1,4 @@
-#[cfg(feature = "wgpu-backend")]
-pub mod backend;
+mod backend;
 mod filter;
 mod noise;
 mod ntsc;
@@ -9,4 +8,8 @@ mod shift;
 mod thread_pool;
 pub mod yiq_fielding;
 
+pub use backend::{
+    available_backends, default_backend, Backend, BackendCapabilities, BackendInitError,
+    BackendKind, BackendRunError, FrameDesc, FrameFormat, PlaneLayout,
+};
 pub use settings::standard::{NtscEffect, NtscEffectFullSettings};

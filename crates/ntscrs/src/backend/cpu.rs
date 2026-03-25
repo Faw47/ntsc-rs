@@ -1,27 +1,20 @@
 use crate::{settings::standard::NtscEffect, yiq_fielding::YiqView};
 
-use super::{
-    pipeline::{GpuPass, PassGraph},
-    types::{
-        BackendCapabilities, BackendKind, BackendRunError, FrameDesc, FrameFormat, PlaneLayout,
-    },
+use super::types::{
+    BackendCapabilities, BackendKind, BackendRunError, FrameDesc, FrameFormat, PlaneLayout,
 };
 
-#[derive(Debug)]
-pub(crate) struct WgpuBackend {
-    graph: PassGraph,
-}
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct CpuBackend;
 
-impl WgpuBackend {
-    pub(crate) fn new() -> Self {
-        Self {
-            graph: PassGraph::minimal(),
-        }
+impl CpuBackend {
+    pub(crate) const fn new() -> Self {
+        Self
     }
 
     pub(crate) fn capabilities() -> BackendCapabilities {
         BackendCapabilities {
-            kind: BackendKind::Wgpu,
+            kind: BackendKind::Cpu,
             supports_frame_format: FrameFormat::YiqPlanarF32,
             supports_plane_layout: PlaneLayout::ContiguousPlanar,
         }
@@ -47,16 +40,7 @@ impl WgpuBackend {
             ));
         }
 
-        // Skeleton execution path: iterate the pass graph and execute
-        // the single currently supported pass.
-        for node in self.graph.passes() {
-            match node.pass {
-                GpuPass::ApplyNtscEffectField => {
-                    effect.apply_effect_cpu_to_all_fields(yiq, frame_num, scale_factor)
-                }
-            }
-        }
-
+        effect.apply_effect_cpu_to_all_fields(yiq, frame_num, scale_factor);
         Ok(())
     }
 }

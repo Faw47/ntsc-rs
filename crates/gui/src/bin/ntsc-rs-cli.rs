@@ -12,17 +12,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+use std::ffi::OsStr;
+
 use clap::{
-    Arg, ArgAction, ArgGroup, ValueEnum,
-    builder::{EnumValueParser, PathBufValueParser, PossibleValue},
+    Arg, ArgAction, ArgGroup, Command, ValueEnum,
+    builder::{EnumValueParser, PathBufValueParser, PossibleValue, StringValueParser, TypedValueParser},
     command,
+    error::{ContextKind, ContextValue, Error, ErrorKind},
 };
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
 use ntsc_rs::{
     BackendPreference, NtscEffectFullSettings,
-    settings::{ParseSettingsError, SettingsList},
+    settings::SettingsList,
 };
 use ntsc_rs_gui::{
     app::{
@@ -44,11 +47,42 @@ use ntsc_rs_gui::{
     },
 };
 
-fn parse_settings(
-    settings_list: &SettingsList<NtscEffectFullSettings>,
-    json: &str,
-) -> Result<NtscEffectFullSettings, ParseSettingsError> {
-    settings_list.from_json(json)
+#[derive(Clone)]
+struct SettingsParser {
+    settings_list: SettingsList<NtscEffectFullSettings>,
+}
+
+impl TypedValueParser for SettingsParser {
+    type Value = NtscEffectFullSettings;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &OsStr,
+    ) -> std::result::Result<Self::Value, Error> {
+        let inner = StringValueParser::new();
+        let val = inner.parse_ref(cmd, arg, value)?;
+
+        self.settings_list.from_json(&val).map_err(|e| {
+            let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+            if let Some(arg) = arg {
+                err.insert(
+                    ContextKind::InvalidArg,
+                    ContextValue::String(arg.to_string()),
+                );
+            }
+            err.insert(
+                ContextKind::InvalidValue,
+                ContextValue::String(val),
+            );
+            err.insert(
+                ContextKind::Usage,
+                ContextValue::String(format!("Failed to parse settings: {}", e)),
+            );
+            err
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,9 +208,6 @@ macro_rules! warn {
 pub fn main() -> Result<()> {
     color_eyre::install()?;
     let settings_list = SettingsList::<NtscEffectFullSettings>::new();
-    let settings_list_for_parser = settings_list.clone();
-
-    let parse_standard_settings = move |json: &str| parse_settings(&settings_list_for_parser, json);
 
     let command = command!()
         .name("ntsc-rs")
@@ -235,10 +266,11 @@ pub fn main() -> Result<()> {
             Arg::new("settings-json")
                 .short('j')
                 .long("settings-json")
-                // TODO: ValueParser that wraps ntsc_rs::settings
                 .help("JSON string for an effect settings preset.")
                 .conflicts_with("settings-path")
-                .value_parser(parse_standard_settings.clone()),
+                .value_parser(SettingsParser {
+                    settings_list: settings_list.clone(),
+                }),
         )
         .group(ArgGroup::new("settings").args(["settings-path", "settings-json"]))
         .arg(
@@ -365,7 +397,7 @@ pub fn main() -> Result<()> {
     let matches = command.get_matches();
 
     let settings = if let Some(settings_path) = matches.get_one::<PathBuf>("settings-path") {
-        parse_standard_settings(
+        settings_list.from_json(
             std::str::from_utf8(&fs::read(settings_path).wrap_err("Failed to open settings file")?)
                 .wrap_err("Settings file is not valid UTF-8")?,
         )

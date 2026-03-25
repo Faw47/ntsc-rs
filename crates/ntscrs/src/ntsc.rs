@@ -701,14 +701,27 @@ fn chroma_phase_error(yiq: &mut YiqView, intensity: f32) {
 /// Add per-scanline chroma phase error.
 fn chroma_phase_noise(yiq: &mut YiqView, info: &CommonInfo, intensity: f32) {
     let width = yiq.dimensions.0;
-    let seeder = Seeder::new(info.seed)
+    let seed = Seeder::new(info.seed)
         .mix(noise_seeds::VIDEO_CHROMA_PHASE)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.i, yiq.q], width).par_for_each(|index, [i, q]| {
+        // Simple hash to generate a per-line random value from the base seed and line index.
+        // This is much faster than cloning and finalizing a SipHasher or re-seeding Xoshiro for every line.
+        let mut h = seed.wrapping_add(index as u64);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xff51afd7ed558ccd);
+        h ^= h >> 33;
+        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+        h ^= h >> 33;
+
+        // Map the u64 to a f32 in the range [0.0, 1.0)
+        let val = (h as f32) / (u64::MAX as f32 + 1.0);
+
         // Phase shift angle in radians. Mapped so that an intensity of 1.0 is a phase shift ranging from a full
         // rotation to the left, to a full rotation to the right.
-        let phase_shift = (seeder.clone().mix(index).finalize::<f32>() - 0.5) * 2.0 * intensity;
+        let phase_shift = (val - 0.5) * 2.0 * intensity;
 
         chroma_phase_offset_line(i, q, phase_shift);
     });

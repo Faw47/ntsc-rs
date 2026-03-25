@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, path::PathBuf};
 
 use gstreamer::{ClockTime, Fraction};
-use ntsc_rs::{BackendPreference, NtscEffect, NtscEffectFullSettings, settings::UseField};
+use ntsc_rs::{NtscEffect, NtscEffectFullSettings, settings::UseField};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +159,6 @@ pub struct RenderPipelineSettings {
     pub output_path: PathBuf,
     pub interlacing: RenderInterlaceMode,
     pub effect_settings: NtscEffect,
-    pub backend_preference: BackendPreference,
 }
 
 impl RenderPipelineSettings {
@@ -175,7 +174,6 @@ impl RenderPipelineSettings {
                 render_settings.interlaced && render_settings.interlaced_output_allowed(),
             ),
             effect_settings: effect_settings.into(),
-            backend_preference: BackendPreference::Auto,
         }
     }
 }

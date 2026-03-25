@@ -8,14 +8,12 @@ use std::{
     fs::File,
     mem::{self, MaybeUninit},
     num::NonZero,
-    sync::OnceLock,
 };
 
 use after_effects::{self as ae};
 use handle::SliceHandle;
 use ntsc_rs::{
-    BackendPreference, NtscEffect, NtscEffectFullSettings,
-    apply_effect_to_yiq_with_backend_preference,
+    NtscEffect, NtscEffectFullSettings,
     settings::{
         EnumValue, SettingDescriptor, SettingField, SettingID, SettingKind, Settings, SettingsList,
         standard::UseField,
@@ -29,11 +27,6 @@ use window_handle::WindowAndDisplayHandle;
 
 struct Plugin {
     settings: SettingsList<NtscEffectFullSettings>,
-}
-
-fn backend_preference_for_plugin() -> Option<BackendPreference> {
-    static BACKEND_PREF: OnceLock<Option<BackendPreference>> = OnceLock::new();
-    *BACKEND_PREF.get_or_init(|| BackendPreference::from_env_var("NTSCRS_BACKEND"))
 }
 
 impl Default for Plugin {
@@ -199,21 +192,25 @@ fn ceil_mul_rational(n: i32, scale: RationalScale) -> i32 {
 }
 
 unsafe fn transmute_slice<T, U>(slice: &[T]) -> &[U] {
-    let (prefix, middle, suffix) = unsafe { slice.align_to::<U>() };
-    assert!(
-        prefix.is_empty() && suffix.is_empty(),
-        "Unaligned transmute or size mismatch"
-    );
-    middle
+    let src_size = mem::size_of::<T>();
+    let dst_size = mem::size_of::<U>();
+    let new_len = if dst_size > src_size {
+        slice.len() / (dst_size / src_size)
+    } else {
+        slice.len() * (src_size / dst_size)
+    };
+    unsafe { std::slice::from_raw_parts(slice.as_ptr() as _, new_len) }
 }
 
 unsafe fn transmute_slice_mut<T, U>(slice: &mut [T]) -> &mut [U] {
-    let (prefix, middle, suffix) = unsafe { slice.align_to_mut::<U>() };
-    assert!(
-        prefix.is_empty() && suffix.is_empty(),
-        "Unaligned transmute or size mismatch"
-    );
-    middle
+    let src_size = mem::size_of::<T>();
+    let dst_size = mem::size_of::<U>();
+    let new_len = if dst_size > src_size {
+        slice.len() / (dst_size / src_size)
+    } else {
+        slice.len() * (src_size / dst_size)
+    };
+    unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr() as _, new_len) }
 }
 
 impl Plugin {
@@ -481,13 +478,7 @@ impl Plugin {
         } else {
             [in_data.downsample_x(), in_data.downsample_y()].map(|factor| factor.into())
         };
-        apply_effect_to_yiq_with_backend_preference(
-            &effect,
-            &mut view,
-            frame_num,
-            scale_factors,
-            backend_preference_for_plugin().unwrap_or_default(),
-        );
+        effect.apply_effect_to_yiq(&mut view, frame_num, scale_factors);
 
         match out_pixel_format {
             NtscrsPixelFormat::Xrgb8 => {

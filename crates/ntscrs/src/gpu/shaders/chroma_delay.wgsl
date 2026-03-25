@@ -8,9 +8,15 @@ struct Params {
     frame_num: u32,
     phase_shift: u32,
     phase_offset: i32,
+
     filter_mode: u32,
     chroma_delay_horizontal: f32,
     chroma_delay_vertical: i32,
+    seed: u32,
+
+    composite_noise_frequency: f32,
+    composite_noise_intensity: f32,
+    composite_noise_detail: u32,
     _pad: u32,
 }
 @group(1) @binding(0) var<uniform> params: Params;

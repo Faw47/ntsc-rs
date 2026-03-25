@@ -1,7 +1,6 @@
 use gstreamer::{BufferRef, ClockTime, FlowError};
 use gstreamer_video::{VideoFormat, VideoFrameExt, VideoFrameRef, VideoInterlaceMode};
 use ntsc_rs::{
-    BackendPreference, apply_effect_to_yiq_with_backend_preference,
     settings::standard::NtscEffect,
     yiq_fielding::{
         Bgrx, BlitInfo, DeinterlaceMode, Normalize, PixelFormat, Rect, Rgbx, Xbgr, Xrgb, YiqField,
@@ -46,7 +45,6 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
     out_stride: usize,
     out_rect: Option<Rect>,
     settings: &NtscEffect,
-    backend_preference: Option<BackendPreference>,
 ) -> Result<(), FlowError> {
     let info = in_frame.info();
 
@@ -72,20 +70,13 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
                 out_stride,
             )
         });
-    let backend_preference = backend_preference.unwrap_or_default();
 
     match in_frame.info().interlace_mode() {
         VideoInterlaceMode::Progressive => {
             let field = settings.use_field.to_yiq_field(frame as usize);
             let mut yiq = frame_to_yiq(in_frame, field)?;
             let mut view = YiqView::from(&mut yiq);
-            apply_effect_to_yiq_with_backend_preference(
-                settings,
-                &mut view,
-                frame as usize,
-                [1.0, 1.0],
-                backend_preference,
-            );
+            settings.apply_effect_to_yiq(&mut view, frame as usize, [1.0, 1.0]);
             view.write_to_strided_buffer::<S, T, _>(out_frame, blit_info, DeinterlaceMode::Bob, ());
         }
         VideoInterlaceMode::Interleaved | VideoInterlaceMode::Mixed => {
@@ -98,8 +89,7 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
 
             let mut yiq = frame_to_yiq(in_frame, field)?;
             let mut view = YiqView::from(&mut yiq);
-            apply_effect_to_yiq_with_backend_preference(
-                settings,
+            settings.apply_effect_to_yiq(
                 &mut view,
                 if in_frame.is_onefield() {
                     frame as usize * 2
@@ -107,7 +97,6 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
                     frame as usize
                 },
                 [1.0, 1.0],
-                backend_preference,
             );
             view.write_to_strided_buffer::<S, T, _>(
                 out_frame,

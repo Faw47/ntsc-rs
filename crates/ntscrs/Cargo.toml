@@ -25,6 +25,8 @@ image = { version = "0.25.1", default-features = false, features = ["png"] }
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon-core", "dep:num_cpus"]
+gpu-wgpu = []
+gpu-cuda = []
 
 [[bench]]
 name = "filter_profile"
@@ -32,3 +34,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "backend_profile"
+harness = false

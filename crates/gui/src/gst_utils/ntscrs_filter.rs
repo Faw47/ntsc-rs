@@ -1,4 +1,4 @@
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use gstreamer::glib;
 use gstreamer::prelude::{GstParamSpecBuilderExt, ParamSpecBuilderExt, ToValue};
@@ -6,6 +6,7 @@ use gstreamer_video::subclass::prelude::*;
 use gstreamer_video::{VideoFormat, VideoFrameExt};
 
 use ntsc_rs::NtscEffect;
+use ntsc_rs::gpu::{BackendType, runner::NtscEffectRunner};
 use ntsc_rs::yiq_fielding::{Bgrx, Rgbx, Xbgr, Xrgb};
 
 use super::process_gst_frame::process_gst_frame;
@@ -14,10 +15,20 @@ use super::process_gst_frame::process_gst_frame;
 #[boxed_type(name = "NtscFilterSettings")]
 pub struct NtscFilterSettings(pub NtscEffect);
 
-#[derive(Default)]
 pub struct NtscFilter {
     info: RwLock<Option<gstreamer_video::VideoInfo>>,
     settings: RwLock<NtscFilterSettings>,
+    runner: Mutex<NtscEffectRunner>,
+}
+
+impl Default for NtscFilter {
+    fn default() -> Self {
+        Self {
+            info: RwLock::new(None),
+            settings: RwLock::new(NtscFilterSettings::default()),
+            runner: Mutex::new(NtscEffectRunner::new(BackendType::Auto)),
+        }
+    }
 }
 
 impl NtscFilter {}
@@ -156,22 +167,24 @@ impl VideoFilterImpl for NtscFilter {
             .plane_data_mut(0)
             .or(Err(gstreamer::FlowError::Error))?;
 
+        let mut runner = self.runner.lock().unwrap();
+
         match out_format {
             VideoFormat::Rgbx | VideoFormat::Rgba => {
-                process_gst_frame::<Rgbx, u8>(in_frame, out_data, out_stride, None, &settings)?;
+                process_gst_frame::<Rgbx, u8>(in_frame, out_data, out_stride, None, &settings, &mut runner)?;
             }
             VideoFormat::Bgrx | VideoFormat::Bgra => {
-                process_gst_frame::<Bgrx, u8>(in_frame, out_data, out_stride, None, &settings)?;
+                process_gst_frame::<Bgrx, u8>(in_frame, out_data, out_stride, None, &settings, &mut runner)?;
             }
             VideoFormat::Xrgb | VideoFormat::Argb => {
-                process_gst_frame::<Xrgb, u8>(in_frame, out_data, out_stride, None, &settings)?;
+                process_gst_frame::<Xrgb, u8>(in_frame, out_data, out_stride, None, &settings, &mut runner)?;
             }
             VideoFormat::Xbgr | VideoFormat::Abgr => {
-                process_gst_frame::<Xbgr, u8>(in_frame, out_data, out_stride, None, &settings)?;
+                process_gst_frame::<Xbgr, u8>(in_frame, out_data, out_stride, None, &settings, &mut runner)?;
             }
             VideoFormat::Argb64 => {
                 let data_16 = unsafe { out_data.align_to_mut::<u16>() }.1;
-                process_gst_frame::<Xrgb, u16>(in_frame, data_16, out_stride, None, &settings)?;
+                process_gst_frame::<Xrgb, u16>(in_frame, data_16, out_stride, None, &settings, &mut runner)?;
             }
             _ => Err(gstreamer::FlowError::NotSupported)?,
         };

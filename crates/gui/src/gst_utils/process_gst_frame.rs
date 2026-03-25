@@ -45,6 +45,7 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
     out_stride: usize,
     out_rect: Option<Rect>,
     settings: &NtscEffect,
+    runner: &mut ntsc_rs::gpu::runner::NtscEffectRunner,
 ) -> Result<(), FlowError> {
     let info = in_frame.info();
 
@@ -76,7 +77,7 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
             let field = settings.use_field.to_yiq_field(frame as usize);
             let mut yiq = frame_to_yiq(in_frame, field)?;
             let mut view = YiqView::from(&mut yiq);
-            settings.apply_effect_to_yiq(&mut view, frame as usize, [1.0, 1.0]);
+            runner.apply_effect(&mut view, settings, frame as usize, [1.0, 1.0]);
             view.write_to_strided_buffer::<S, T, _>(out_frame, blit_info, DeinterlaceMode::Bob, ());
         }
         VideoInterlaceMode::Interleaved | VideoInterlaceMode::Mixed => {
@@ -89,8 +90,9 @@ pub fn process_gst_frame<S: PixelFormat, T: Normalize>(
 
             let mut yiq = frame_to_yiq(in_frame, field)?;
             let mut view = YiqView::from(&mut yiq);
-            settings.apply_effect_to_yiq(
+            runner.apply_effect(
                 &mut view,
+                settings,
                 if in_frame.is_onefield() {
                     frame as usize * 2
                 } else {

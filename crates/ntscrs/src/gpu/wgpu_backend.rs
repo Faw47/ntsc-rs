@@ -80,6 +80,8 @@ pub struct WgpuBackend {
     filter_plane_pipeline: wgpu::ComputePipeline,
     composite_noise_pipeline: wgpu::ComputePipeline,
     chroma_vert_blend_pipeline: wgpu::ComputePipeline,
+    plane_noise_pipeline: wgpu::ComputePipeline,
+    chroma_loss_pipeline: wgpu::ComputePipeline,
     params_bind_group_layout: wgpu::BindGroupLayout,
     filter_params_bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -141,6 +143,16 @@ impl WgpuBackend {
         let chroma_vert_blend_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("chroma_vert_blend shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/chroma_vert_blend.wgsl").into()),
+        });
+
+        let plane_noise_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("plane_noise shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/plane_noise.wgsl").into()),
+        });
+
+        let chroma_loss_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("chroma_loss shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/chroma_loss.wgsl").into()),
         });
 
         let copy_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -295,6 +307,22 @@ impl WgpuBackend {
             compilation_options: Default::default(),
         });
 
+        let plane_noise_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("plane_noise pipeline"),
+            layout: Some(&effect_pipeline_layout),
+            module: &plane_noise_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
+
+        let chroma_loss_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("chroma_loss pipeline"),
+            layout: Some(&effect_pipeline_layout),
+            module: &chroma_loss_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+        });
+
         Some(Self {
             device: Arc::new(device),
             queue: Arc::new(queue),
@@ -306,6 +334,8 @@ impl WgpuBackend {
             filter_plane_pipeline,
             composite_noise_pipeline,
             chroma_vert_blend_pipeline,
+            plane_noise_pipeline,
+            chroma_loss_pipeline,
             params_bind_group_layout,
             filter_params_bind_group_layout,
         })
@@ -371,7 +401,17 @@ impl GpuBackend for WgpuBackend {
             composite_noise_frequency: f32,
             composite_noise_intensity: f32,
             composite_noise_detail: u32,
-            _pad: u32, // padding to 16 bytes alignment
+            luma_noise_frequency: f32,
+
+            luma_noise_intensity: f32,
+            luma_noise_detail: u32,
+            chroma_noise_frequency: f32,
+            chroma_noise_intensity: f32,
+
+            chroma_noise_detail: u32,
+            do_luma_noise: u32,
+            do_chroma_noise: u32,
+            chroma_loss_intensity: f32, // padding to 16 bytes alignment
         }
 
         let params = ShaderParams {
@@ -388,7 +428,17 @@ impl GpuBackend for WgpuBackend {
             composite_noise_frequency: effect.composite_noise.as_ref().map(|n| n.frequency).unwrap_or(0.0),
             composite_noise_intensity: effect.composite_noise.as_ref().map(|n| n.intensity).unwrap_or(0.0),
             composite_noise_detail: effect.composite_noise.as_ref().map(|n| n.detail as u32).unwrap_or(1),
-            _pad: 0,
+            luma_noise_frequency: effect.luma_noise.as_ref().map(|n| n.frequency).unwrap_or(0.0),
+
+            luma_noise_intensity: effect.luma_noise.as_ref().map(|n| n.intensity).unwrap_or(0.0),
+            luma_noise_detail: effect.luma_noise.as_ref().map(|n| n.detail as u32).unwrap_or(1),
+            chroma_noise_frequency: effect.chroma_noise.as_ref().map(|n| n.frequency).unwrap_or(0.0),
+            chroma_noise_intensity: effect.chroma_noise.as_ref().map(|n| n.intensity).unwrap_or(0.0),
+
+            chroma_noise_detail: effect.chroma_noise.as_ref().map(|n| n.detail as u32).unwrap_or(1),
+            do_luma_noise: if effect.luma_noise.is_some() { 1 } else { 0 },
+            do_chroma_noise: if effect.chroma_noise.is_some() { 1 } else { 0 },
+            chroma_loss_intensity: effect.vhs_settings.as_ref().map(|s| s.chroma_loss).unwrap_or(0.0),
         };
 
         let params_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -481,9 +531,7 @@ impl GpuBackend for WgpuBackend {
             cpass.dispatch_workgroups(workgroups, 1, 1);
         }
 
-        // Helper to dispatch filter_plane. In a full implementation, we'd call this
-        // wherever `filter_plane()` is called on CPU.
-        // For demonstration of the fixed pipeline and layout:
+        // Helper to dispatch filter_plane.
         #[repr(C)]
         #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
         struct FilterParams {
@@ -499,67 +547,87 @@ impl GpuBackend for WgpuBackend {
             _pad: u32,
         }
 
-        let filter_params = FilterParams {
-            width: frame.width as u32,
-            frame_num: frame_num as u32,
-            num_len: 1,
-            den_len: 1,
-            num: [[1.0, 0.0, 0.0, 0.0], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4], [0.0; 4]],
-            den: [[0.0; 4]; 16],
-            initial_condition: 0.0,
-            initial_type: 0,
-            delay: 0,
-            _pad: 0,
-        };
+        let mut dispatch_filter = |encoder: &mut wgpu::CommandEncoder, tf: &crate::filter::TransferFunction, delay: u32, buf: &wgpu::Buffer| {
+            let (num, den) = tf.num_den();
+            let mut filter_params = FilterParams {
+                width: frame.width as u32,
+                frame_num: frame_num as u32,
+                num_len: num.len() as u32,
+                den_len: den.len() as u32,
+                num: [[0.0; 4]; 16],
+                den: [[0.0; 4]; 16],
+                initial_condition: 0.0,
+                initial_type: 0, // Zero
+                delay,
+                _pad: 0,
+            };
 
-        let filter_params_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("filter_params_buffer"),
-            contents: bytemuck::cast_slice(&[filter_params]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+            for (i, &val) in num.iter().enumerate().take(16) {
+                filter_params.num[i][0] = val;
+            }
+            for (i, &val) in den.iter().enumerate().take(16) {
+                filter_params.den[i][0] = val;
+            }
 
-        let filter_params_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("filter_params_bind_group"),
-            layout: &self.filter_params_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: filter_params_buffer.as_entire_binding(),
-            }],
-        });
+            let filter_params_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("filter_params_buffer"),
+                contents: bytemuck::cast_slice(&[filter_params]),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
-        let y_only_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("y only main bind group"),
-            layout: &self.copy_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
+            let filter_params_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("filter_params_bind_group"),
+                layout: &self.filter_params_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: frame.y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: frame.y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: frame.y_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: frame.y_buffer.as_entire_binding(),
-                },
-            ]
-        });
+                    resource: filter_params_buffer.as_entire_binding(),
+                }],
+            });
 
-        {
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("filter main bind group"),
+                layout: &self.copy_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: buf.as_entire_binding(),
+                    },
+                ]
+            });
+
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("filter_plane pass"),
                 timestamp_writes: None,
             });
             cpass.set_pipeline(&self.filter_plane_pipeline);
-            cpass.set_bind_group(0, &y_only_bind_group, &[]);
+            cpass.set_bind_group(0, &bind_group, &[]);
             cpass.set_bind_group(1, &filter_params_bind_group, &[]);
             let rows = frame.height as u32;
             cpass.dispatch_workgroups(rows.div_ceil(64), 1, 1);
+        };
+
+        // Apply Luma Smear filter if configured
+        if effect.luma_smear > 0.0 {
+            use std::f32::consts::PI;
+            // Similar logic to luma_smear in ntsc.rs
+            let cutoff = f32::exp2(-4.0 * effect.luma_smear) * 0.25;
+            let time_interval = 1.0 / (effect.scale.as_ref().map(|s| s.horizontal_scale).unwrap_or(1.0));
+            let tau = (cutoff * 2.0 * PI).recip();
+            let alpha = time_interval / (tau + time_interval);
+            let tf = crate::filter::TransferFunction::new(&[alpha], &[-(1.0 - alpha)]);
+            dispatch_filter(&mut encoder, &tf, 0, &frame.y_buffer);
         }
 
         if effect.composite_noise.is_some() {
@@ -583,6 +651,31 @@ impl GpuBackend for WgpuBackend {
             cpass.set_bind_group(1, &params_bind_group, &[]);
             let columns = frame.width as u32;
             cpass.dispatch_workgroups(columns.div_ceil(64), 1, 1);
+        }
+
+        if effect.luma_noise.is_some() || effect.chroma_noise.is_some() {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("plane_noise pass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&self.plane_noise_pipeline);
+            cpass.set_bind_group(0, &main_bind_group, &[]);
+            cpass.set_bind_group(1, &params_bind_group, &[]);
+            cpass.dispatch_workgroups(workgroups, 1, 1);
+        }
+
+        if let Some(vhs_settings) = &effect.vhs_settings {
+            if vhs_settings.chroma_loss > 0.0 {
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("chroma_loss pass"),
+                    timestamp_writes: None,
+                });
+                cpass.set_pipeline(&self.chroma_loss_pipeline);
+                cpass.set_bind_group(0, &main_bind_group, &[]);
+                cpass.set_bind_group(1, &params_bind_group, &[]);
+                // Workgroup dispatching 1 thread per row
+                cpass.dispatch_workgroups((frame.height as u32).div_ceil(64), 1, 1);
+            }
         }
 
         self.queue.submit(Some(encoder.finish()));

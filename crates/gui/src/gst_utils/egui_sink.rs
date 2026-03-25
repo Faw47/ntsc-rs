@@ -49,7 +49,7 @@ impl Debug for SinkTexture {
 #[boxed_type(name = "EguiCtx")]
 pub struct EguiCtx(pub Option<Context>);
 
-#[derive(glib::Properties, Default)]
+#[derive(glib::Properties)]
 #[properties(wrapper_type = super::elements::EguiSink)]
 pub struct EguiSink {
     #[property(get, set)]
@@ -68,6 +68,21 @@ pub struct EguiSink {
             u64,
         )>,
     >,
+    runner: Mutex<ntsc_rs::gpu::runner::NtscEffectRunner>,
+}
+
+impl Default for EguiSink {
+    fn default() -> Self {
+        Self {
+            texture: Mutex::new(SinkTexture::new()),
+            ctx: Mutex::new(EguiCtx::default()),
+            settings: Mutex::new(NtscFilterSettings::default()),
+            preview_mode: Mutex::new(EffectPreviewSetting::default()),
+            video_info: Mutex::new(None),
+            last_frame: Mutex::new(None),
+            runner: Mutex::new(ntsc_rs::gpu::runner::NtscEffectRunner::new(ntsc_rs::gpu::BackendType::Auto)),
+        }
+    }
 }
 
 impl EguiSink {
@@ -88,12 +103,14 @@ impl EguiSink {
         rect: Option<yiq_fielding::Rect>,
     ) -> Result<(), gstreamer::FlowError> {
         let out_stride = image.width() * 4;
+        let mut runner = self.runner.lock().unwrap();
         process_gst_frame::<Rgbx, u8>(
             &vframe.as_video_frame_ref(),
             image.as_raw_mut(),
             out_stride,
             rect,
             &self.settings.lock().unwrap().0,
+            &mut runner,
         )?;
 
         Ok(())

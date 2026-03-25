@@ -30,6 +30,8 @@ image = { version = "0.25.1", default-features = false, features = ["png"] }
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon-core", "dep:num_cpus"]
+wgpu-backend = []
+cuda-backend = []
 
 # canonical internal feature
 wgpu-backend = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:thiserror"]

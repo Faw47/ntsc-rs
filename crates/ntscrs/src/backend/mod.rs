@@ -80,7 +80,7 @@ impl Backend {
 }
 
 pub fn default_backend() -> Backend {
-    Backend::new(BackendKind::Cpu).expect("CPU backend must be available")
+    Backend::new(BackendKind::Cpu).expect("the CPU backend must always be available")
 }
 
 pub fn available_backends() -> &'static [BackendKind] {

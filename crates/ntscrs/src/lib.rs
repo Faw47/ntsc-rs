@@ -2,6 +2,7 @@ mod filter;
 mod noise;
 mod ntsc;
 mod random;
+pub mod gpu;
 pub mod settings;
 mod shift;
 mod thread_pool;

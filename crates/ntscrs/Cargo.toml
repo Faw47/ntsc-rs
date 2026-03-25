@@ -30,15 +30,7 @@ image = { version = "0.25.1", default-features = false, features = ["png"] }
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon-core", "dep:num_cpus"]
-wgpu-backend = []
-cuda-backend = []
-
-# canonical internal feature
-wgpu-backend = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:thiserror"]
-
-# compatibility aliases
-wgpu = ["wgpu-backend"]
-gpu-wgpu = ["wgpu-backend"]
+gpu-wgpu = []
 gpu-cuda = []
 
 [[bench]]
@@ -47,3 +39,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "backend_profile"
+harness = false

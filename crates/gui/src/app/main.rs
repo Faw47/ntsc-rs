@@ -861,183 +861,161 @@ impl NtscApp {
         changed
     }
 
-    fn show_effect_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::bottom("preset_copy_paste")
-            .interact_height_tall(ui.ctx())
-            .show_inside(ui, |ui| {
-                ui.horizontal_centered(|ui| {
-                    if ui.button("Save to...").clicked() {
-                        let settings_list = self.settings_list.clone();
-                        let effect_settings = self.effect_settings.clone();
-                        let handle = rfd::AsyncFileDialog::new()
-                            .set_parent(frame)
-                            .add_filter("ntsc-rs preset", &["json"])
-                            .set_file_name("settings.json")
-                            .save_file();
-                        self.spawn(async move {
-                            let handle = handle.await;
-                            let handle = match handle {
-                                Some(h) => h,
-                                None => return None,
-                            };
+    fn show_preset_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.visuals_mut().clip_rect_margin = 4.0;
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Save to...").clicked() {
+                            let settings_list = self.settings_list.clone();
+                            let effect_settings = self.effect_settings.clone();
+                            let handle = rfd::AsyncFileDialog::new()
+                                .set_parent(frame)
+                                .add_filter("ntsc-rs preset", &["json"])
+                                .set_file_name("settings.json")
+                                .save_file();
+                            self.spawn(async move {
+                                let handle = handle.await;
+                                let handle = match handle {
+                                    Some(h) => h,
+                                    None => return None,
+                                };
 
-                            Some(Box::new(move |_: &mut NtscApp| {
-                                let file =
-                                    File::create(handle.path()).context(CreatePresetFileSnafu)?;
-                                settings_list
-                                    .write_json_to_io(&effect_settings, file)
-                                    .context(CreatePresetJSONSnafu)?;
-                                Ok(())
-                            }) as _)
-                        });
-                    }
-
-                    if ui.button("Load from...").clicked() {
-                        let handle = rfd::AsyncFileDialog::new()
-                            .set_parent(frame)
-                            .add_filter("ntsc-rs preset", &["json"])
-                            .pick_file();
-                        self.spawn(async move {
-                            let handle = handle.await;
-
-                            Some(Box::new(
-                                move |app: &mut NtscApp| -> Result<(), ApplicationError> {
-                                    let handle = match handle {
-                                        Some(h) => h,
-                                        // user cancelled the operation
-                                        None => return Ok(()),
-                                    };
-
-                                    let mut file =
-                                        File::open(handle.path()).context(JSONReadSnafu)?;
-
-                                    let mut buf = String::new();
-                                    file.read_to_string(&mut buf).context(JSONReadSnafu)?;
-
-                                    let settings = app
-                                        .settings_list
-                                        .from_json(&buf)
-                                        .context(JSONParseSnafu)?;
-
-                                    app.set_effect_settings(settings);
-
+                                Some(Box::new(move |_: &mut NtscApp| {
+                                    let file = File::create(handle.path())
+                                        .context(CreatePresetFileSnafu)?;
+                                    settings_list
+                                        .write_json_to_io(&effect_settings, file)
+                                        .context(CreatePresetJSONSnafu)?;
                                     Ok(())
-                                },
-                            ) as _)
-                        });
-                    }
+                                }) as _)
+                            });
+                        }
 
-                    if ui.button("📋 Copy").clicked() {
-                        let json_string = self.settings_list.to_json_string(&self.effect_settings);
-                        match json_string {
-                            Ok(json) => {
-                                ui.ctx().send_cmd(egui::OutputCommand::CopyText(json));
-                            }
-                            Err(e) => {
-                                self.handle_error(&e);
+                        if ui.button("Load from...").clicked() {
+                            let handle = rfd::AsyncFileDialog::new()
+                                .set_parent(frame)
+                                .add_filter("ntsc-rs preset", &["json"])
+                                .pick_file();
+                            self.spawn(async move {
+                                let handle = handle.await;
+
+                                Some(Box::new(
+                                    move |app: &mut NtscApp| -> Result<(), ApplicationError> {
+                                        let handle = match handle {
+                                            Some(h) => h,
+                                            // user cancelled the operation
+                                            None => return Ok(()),
+                                        };
+
+                                        let mut file =
+                                            File::open(handle.path()).context(JSONReadSnafu)?;
+
+                                        let mut buf = String::new();
+                                        file.read_to_string(&mut buf).context(JSONReadSnafu)?;
+
+                                        let settings = app
+                                            .settings_list
+                                            .from_json(&buf)
+                                            .context(JSONParseSnafu)?;
+
+                                        app.set_effect_settings(settings);
+
+                                        Ok(())
+                                    },
+                                ) as _)
+                            });
+                        }
+
+                        if ui.button("📋 Copy").clicked() {
+                            let json_string =
+                                self.settings_list.to_json_string(&self.effect_settings);
+                            match json_string {
+                                Ok(json) => {
+                                    ui.ctx().send_cmd(egui::OutputCommand::CopyText(json));
+                                }
+                                Err(e) => {
+                                    self.handle_error(&e);
+                                }
                             }
                         }
-                    }
 
-                    let btn = ui.button("📄 Paste");
+                        let btn = ui.button("📄 Paste");
 
-                    let paste_popup_id = ui.make_persistent_id("paste_popup_open");
+                        let paste_popup_id = ui.make_persistent_id("paste_popup_open");
 
-                    if btn.clicked() {
-                        ui.ctx().data_mut(|map| {
-                            let old_value =
-                                map.get_temp_mut_or_insert_with(paste_popup_id, || false);
-                            *old_value = !*old_value;
-                        });
-                    }
+                        if btn.clicked() {
+                            ui.ctx().data_mut(|map| {
+                                let old_value =
+                                    map.get_temp_mut_or_insert_with(paste_popup_id, || false);
+                                *old_value = !*old_value;
+                            });
+                        }
 
-                    if ui
-                        .ctx()
-                        .data(|map| map.get_temp(paste_popup_id).unwrap_or(false))
-                    {
-                        let mut is_open = true;
-                        egui::Window::new("Paste JSON")
-                            .default_pos(btn.rect.center_top())
-                            .open(&mut is_open)
-                            .show(ui.ctx(), |ui| {
-                                ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                                    if ui.button("Load").clicked() {
-                                        match self
-                                            .settings_list
-                                            .from_json(&self.settings_json_paste)
-                                        {
-                                            Ok(settings) => {
-                                                self.set_effect_settings(settings);
-                                                // Close the popup if the JSON was successfully loaded
-                                                ui.ctx().data_mut(|map| {
-                                                    map.insert_temp(paste_popup_id, false)
-                                                });
-                                            }
-                                            Err(e) => {
-                                                self.handle_error(&e);
-                                            }
-                                        }
-                                    }
+                        if ui
+                            .ctx()
+                            .data(|map| map.get_temp(paste_popup_id).unwrap_or(false))
+                        {
+                            let mut is_open = true;
+                            egui::Window::new("Paste JSON")
+                                .default_pos(btn.rect.center_top())
+                                .open(&mut is_open)
+                                .show(ui.ctx(), |ui| {
                                     ui.with_layout(
-                                        egui::Layout::top_down(egui::Align::Min),
+                                        egui::Layout::bottom_up(egui::Align::Min),
                                         |ui| {
-                                            egui::ScrollArea::new([false, true])
-                                                .auto_shrink([true, false])
-                                                .show(ui, |ui| {
-                                                    ui.add_sized(
-                                                        ui.available_size(),
-                                                        egui::TextEdit::multiline(
-                                                            &mut self.settings_json_paste,
-                                                        ),
-                                                    );
-                                                });
+                                            if ui.button("Load").clicked() {
+                                                match self
+                                                    .settings_list
+                                                    .from_json(&self.settings_json_paste)
+                                                {
+                                                    Ok(settings) => {
+                                                        self.set_effect_settings(settings);
+                                                        // Close the popup if the JSON was successfully loaded
+                                                        ui.ctx().data_mut(|map| {
+                                                            map.insert_temp(paste_popup_id, false)
+                                                        });
+                                                    }
+                                                    Err(e) => {
+                                                        self.handle_error(&e);
+                                                    }
+                                                }
+                                            }
+                                            ui.with_layout(
+                                                egui::Layout::top_down(egui::Align::Min),
+                                                |ui| {
+                                                    egui::ScrollArea::new([false, true])
+                                                        .auto_shrink([true, false])
+                                                        .show(ui, |ui| {
+                                                            ui.add_sized(
+                                                                ui.available_size(),
+                                                                egui::TextEdit::multiline(
+                                                                    &mut self.settings_json_paste,
+                                                                ),
+                                                            );
+                                                        });
+                                                },
+                                            );
                                         },
                                     );
                                 });
-                            });
 
-                        if !is_open {
-                            ui.ctx()
-                                .data_mut(|map| map.insert_temp(paste_popup_id, false));
+                            if !is_open {
+                                ui.ctx()
+                                    .data_mut(|map| map.insert_temp(paste_popup_id, false));
+                            }
                         }
-                    }
 
-                    if ui.button("Reset").clicked() {
-                        self.set_effect_settings(NtscEffectFullSettings::default());
-                        self.presets_state.deselect_preset();
-                    }
-                });
-            });
+                        if ui.button("Reset").clicked() {
+                            self.set_effect_settings(NtscEffectFullSettings::default());
+                            self.presets_state.deselect_preset();
+                        }
+                    });
 
-        let id = ui.make_persistent_id("presets_manager_open");
-        let collapse_state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-        egui::TopBottomPanel::bottom("preset_manager")
-            .resizable(collapse_state.is_open())
-            // Determined experimentally to prevent the presets manager from becoming too tall to drag back down by its
-            // top edge
-            .max_height(600.0f32.min(ui.available_height() - 100.0))
-            .min_height(egui::lerp(
-                ui.spacing().interact_size.y..=200.0,
-                collapse_state.openness(ui.ctx()),
-            ))
-            .show_inside(ui, |ui| {
-                // Prevent buttons in the preset manager from having their outlines cut off
-                ui.visuals_mut().clip_rect_margin = 2.0;
-                let collapse_state = collapse_state.show_header(ui, |ui| {
-                    // In order to properly resize the panel when we open the "Presets" header, we need to create the
-                    // CollapsingState outside this UI. That means we can't just use a regular CollapsingHeader and must
-                    // draw it ourselves. Somehow, this `interact` causes the header to be clickable throughout.
-                    let resp =
-                        ui.interact(ui.available_rect_before_wrap(), id, egui::Sense::click());
-                    let style = ui.style().interact(&resp);
-                    ui.add(
-                        egui::Label::new(egui::RichText::new("Presets").color(style.text_color()))
-                            .selectable(false),
-                    );
-                });
+                    ui.separator();
 
-                collapse_state.body_unindented(|ui| {
                     if let Some(dropped_presets) = ui.show_dnd_overlay("Drop to install presets") {
                         self.install_presets(
                             dropped_presets.into_iter().filter_map(|file| file.path),
@@ -1046,8 +1024,10 @@ impl NtscApp {
 
                     self.show_presets_pane(ui);
                 });
-            });
+        });
+    }
 
+    fn show_effect_settings(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(egui::DroppedFile {
                 path: Some(preset_path),
@@ -1159,15 +1139,12 @@ impl NtscApp {
     }
 
     fn setup_control_rows(ui: &mut egui::Ui) {
-        const LABEL_WIDTH: f32 = 180.0;
-
-        let remaining_width = ui.max_rect().width() - LABEL_WIDTH;
-
+        let slider_width = ui.available_width() * 0.55;
         let spacing = ui.spacing_mut();
-        spacing.slider_width = remaining_width - 48.0;
+        spacing.slider_width = slider_width;
         spacing.interact_size.x = 48.0;
-        spacing.combo_width =
-            spacing.slider_width + spacing.interact_size.x + spacing.item_spacing.x;
+        spacing.combo_width = spacing.slider_width;
+        spacing.item_spacing.y = 8.0;
     }
 
     fn show_render_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -1664,220 +1641,133 @@ impl NtscApp {
                 if self.pipeline.is_none() {
                     ui.disable();
                 }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let btn_widget = egui::Button::new(match &self.pipeline {
-                        Some(PipelineInfo { pipeline, .. }) => {
-                            let state = pipeline.current_state();
-                            match state {
-                                gstreamer::State::Paused | gstreamer::State::Ready => "▶",
-                                gstreamer::State::Playing => "⏸",
-                                _ => "▶",
-                            }
-                        }
-                        None => "▶",
-                    });
-                    let btn = ui.add_sized(
-                        vec2(
-                            ui.spacing().interact_size.y * 1.5,
-                            ui.spacing().interact_size.y * 1.5,
-                        ),
-                        btn_widget,
-                    );
 
-                    let ctx = ui.ctx();
-                    if !ctx.wants_keyboard_input()
-                        && ctx.input(|i| {
-                            i.events.iter().any(|event| {
-                                if let egui::Event::Key {
-                                    key,
-                                    pressed,
-                                    repeat,
-                                    modifiers,
-                                    ..
-                                } = event
-                                {
-                                    *key == egui::Key::Space
-                                        && *pressed
-                                        && !repeat
-                                        && modifiers.is_none()
-                                } else {
-                                    false
-                                }
-                            })
-                        })
-                    {
-                        let res = self.pipeline.as_mut().map(|p| p.toggle_playing());
-                        if let Some(res) = res {
-                            self.handle_result(res);
-                        }
-                    }
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
 
-                    if btn.clicked() {
-                        let res = self.pipeline.as_mut().map(|p| p.toggle_playing());
-                        if let Some(res) = res {
-                            self.handle_result(res);
-                        }
-                    }
-
-                    let duration = if let Some(info) = &self.pipeline {
-                        info.pipeline.query_duration::<ClockTime>()
-                    } else {
-                        None
-                    };
-
-                    let mut timecode_ms =
-                        last_seek_pos.nseconds() as f64 / ClockTime::MSECOND.nseconds() as f64;
-                    let frame_pace = if let Some(framerate) = framerate {
-                        framerate.denom() as f64 / framerate.numer() as f64
-                    } else {
-                        1f64 / 30f64
-                    };
-
-                    let mut drag_value = egui::DragValue::new(&mut timecode_ms)
-                        .custom_formatter(|value, _| {
-                            clock_time_format((value * ClockTime::MSECOND.nseconds() as f64) as u64)
-                        })
-                        .custom_parser(clock_time_parser)
-                        .speed(frame_pace * 1000.0 * 0.5);
-
-                    if let Some(duration) = duration {
-                        drag_value = drag_value.range(0..=duration.mseconds());
-                    }
-
-                    if ui.add(drag_value).changed()
-                        && let Some(info) = &self.pipeline
-                    {
-                        // don't use KEY_UNIT here; it causes seeking to often be very inaccurate (almost a second of deviation)
-                        let _ = info.pipeline.seek_simple(
-                            gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
-                            ClockTime::from_nseconds(
-                                (timecode_ms * ClockTime::MSECOND.nseconds() as f64) as u64,
-                            ),
+                        ui.add(egui::Label::new("🔎").selectable(false))
+                            .on_hover_text("Zoom preview");
+                        ui.add_enabled(
+                            !self.video_zoom.fit,
+                            egui::DragValue::new(&mut self.video_zoom.scale)
+                                .range(0.0..=8.0)
+                                .speed(0.01)
+                                .custom_formatter(format_percentage)
+                                // Treat as a percentage above 8x zoom
+                                .custom_parser(|input| parse_decimal_or_percentage(input, 8.0)),
                         );
-                    }
+                        ui.checkbox(&mut self.video_zoom.fit, "Fit");
 
-                    ui.separator();
+                        ui.separator();
 
-                    ui.add(egui::Label::new("🔎").selectable(false))
-                        .on_hover_text("Zoom preview");
-                    ui.add_enabled(
-                        !self.video_zoom.fit,
-                        egui::DragValue::new(&mut self.video_zoom.scale)
-                            .range(0.0..=8.0)
-                            .speed(0.01)
-                            .custom_formatter(format_percentage)
-                            // Treat as a percentage above 8x zoom
-                            .custom_parser(|input| parse_decimal_or_percentage(input, 8.0)),
-                    );
-                    ui.checkbox(&mut self.video_zoom.fit, "Fit");
+                        let mut update_effect_preview = false;
+                        ui.add(egui::Label::new("✨").selectable(false))
+                            .on_hover_text("Effect preview");
+                        update_effect_preview |= ui
+                            .selectable_value(
+                                &mut self.effect_preview.mode,
+                                EffectPreviewMode::Enabled,
+                                "Enable",
+                            )
+                            .changed();
+                        update_effect_preview |= ui
+                            .selectable_value(
+                                &mut self.effect_preview.mode,
+                                EffectPreviewMode::Disabled,
+                                "Disable",
+                            )
+                            .changed();
+                        update_effect_preview |= ui
+                            .selectable_value(
+                                &mut self.effect_preview.mode,
+                                EffectPreviewMode::SplitScreen,
+                                "Split",
+                            )
+                            .changed();
 
-                    ui.separator();
-
-                    let has_audio = self
-                        .pipeline
-                        .as_ref()
-                        .map(|info| info.metadata.lock().unwrap())
-                        .and_then(|metadata| metadata.has_audio)
-                        .unwrap_or(false);
-
-                    ui.add_enabled_ui(has_audio, |ui| {
-                        let mut update_volume = false;
-
-                        if ui
-                            .button(if self.audio_volume.mute {
-                                "🔇"
-                            } else {
-                                match self.audio_volume.gain {
-                                    0.0 => "🔇",
-                                    0.0..=0.33 => "🔈",
-                                    0.0..=0.67 => "🔉",
-                                    _ => "🔊",
-                                }
-                            })
-                            .on_hover_text(if self.audio_volume.mute {
-                                "Unmute"
-                            } else {
-                                "Mute"
-                            })
-                            .clicked()
+                        if update_effect_preview
+                            && let Some(PipelineInfo { egui_sink, .. }) = &self.pipeline
                         {
-                            self.audio_volume.mute = !self.audio_volume.mute;
-                            // "<= 0.0" to handle negative zero (not sure if it'll ever happen; better safe than sorry)
-                            if !self.audio_volume.mute && self.audio_volume.gain <= 0.0 {
-                                // Restore the previous gain after the user mutes by dragging the slider to 0 then unmutes
-                                self.audio_volume.gain = self.audio_volume.gain_pre_mute;
-                            }
-                            update_volume = true;
-                        }
-
-                        let resp = ui.add_enabled(
-                            !self.audio_volume.mute,
-                            egui::Slider::new(&mut self.audio_volume.gain, 0.0..=1.25)
-                                // Treat as a percentage above 125% volume
-                                .custom_parser(|input| parse_decimal_or_percentage(input, 1.25))
-                                .custom_formatter(format_percentage),
-                        );
-
-                        if resp.drag_stopped() {
-                            if self.audio_volume.gain > 0.0 {
-                                // Set the gain to restore after dragging the slider to 0
-                                self.audio_volume.gain_pre_mute = self.audio_volume.gain;
-                            } else {
-                                // Wait for drag release to mute because it disables the slider
-                                self.audio_volume.mute = true;
-                            }
-                        }
-
-                        if resp.changed() || resp.drag_stopped() {
-                            update_volume = true;
-                        }
-
-                        if update_volume && let Some(pipeline_info) = &self.pipeline {
-                            pipeline_info.pipeline.set_volume(
-                                // Unlogarithmify volume (at least to my ears, this gives more control at the low end
-                                // of the slider)
-                                10f64.powf(self.audio_volume.gain - 1.0).max(0.0),
-                                self.audio_volume.mute || self.audio_volume.gain == 0.0,
+                            egui_sink.set_property(
+                                "preview-mode",
+                                Self::sink_preview_mode(&self.effect_preview),
                             );
                         }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let has_audio = self
+                                .pipeline
+                                .as_ref()
+                                .map(|info| info.metadata.lock().unwrap())
+                                .and_then(|metadata| metadata.has_audio)
+                                .unwrap_or(false);
+
+                            ui.add_enabled_ui(has_audio, |ui| {
+                                let mut update_volume = false;
+
+                                let resp = ui.add_enabled(
+                                    !self.audio_volume.mute,
+                                    egui::Slider::new(&mut self.audio_volume.gain, 0.0..=1.25)
+                                        // Treat as a percentage above 125% volume
+                                        .custom_parser(|input| {
+                                            parse_decimal_or_percentage(input, 1.25)
+                                        })
+                                        .custom_formatter(format_percentage),
+                                );
+
+                                if resp.drag_stopped() {
+                                    if self.audio_volume.gain > 0.0 {
+                                        // Set the gain to restore after dragging the slider to 0
+                                        self.audio_volume.gain_pre_mute = self.audio_volume.gain;
+                                    } else {
+                                        // Wait for drag release to mute because it disables the slider
+                                        self.audio_volume.mute = true;
+                                    }
+                                }
+
+                                if resp.changed() || resp.drag_stopped() {
+                                    update_volume = true;
+                                }
+
+                                if ui
+                                    .button(if self.audio_volume.mute {
+                                        "🔇"
+                                    } else {
+                                        match self.audio_volume.gain {
+                                            0.0 => "🔇",
+                                            0.0..=0.33 => "🔈",
+                                            0.0..=0.67 => "🔉",
+                                            _ => "🔊",
+                                        }
+                                    })
+                                    .on_hover_text(if self.audio_volume.mute {
+                                        "Unmute"
+                                    } else {
+                                        "Mute"
+                                    })
+                                    .clicked()
+                                {
+                                    self.audio_volume.mute = !self.audio_volume.mute;
+                                    // "<= 0.0" to handle negative zero (not sure if it'll ever happen; better safe than sorry)
+                                    if !self.audio_volume.mute && self.audio_volume.gain <= 0.0 {
+                                        // Restore the previous gain after the user mutes by dragging the slider to 0 then unmutes
+                                        self.audio_volume.gain = self.audio_volume.gain_pre_mute;
+                                    }
+                                    update_volume = true;
+                                }
+
+                                if update_volume && let Some(pipeline_info) = &self.pipeline {
+                                    pipeline_info.pipeline.set_volume(
+                                        // Unlogarithmify volume (at least to my ears, this gives more control at the low end
+                                        // of the slider)
+                                        10f64.powf(self.audio_volume.gain - 1.0).max(0.0),
+                                        self.audio_volume.mute || self.audio_volume.gain == 0.0,
+                                    );
+                                }
+                            });
+                        });
                     });
-
-                    ui.separator();
-
-                    let mut update_effect_preview = false;
-                    ui.add(egui::Label::new("✨").selectable(false))
-                        .on_hover_text("Effect preview");
-                    update_effect_preview |= ui
-                        .selectable_value(
-                            &mut self.effect_preview.mode,
-                            EffectPreviewMode::Enabled,
-                            "Enable",
-                        )
-                        .changed();
-                    update_effect_preview |= ui
-                        .selectable_value(
-                            &mut self.effect_preview.mode,
-                            EffectPreviewMode::Disabled,
-                            "Disable",
-                        )
-                        .changed();
-                    update_effect_preview |= ui
-                        .selectable_value(
-                            &mut self.effect_preview.mode,
-                            EffectPreviewMode::SplitScreen,
-                            "Split",
-                        )
-                        .changed();
-
-                    if update_effect_preview
-                        && let Some(PipelineInfo { egui_sink, .. }) = &self.pipeline
-                    {
-                        egui_sink.set_property(
-                            "preview-mode",
-                            Self::sink_preview_mode(&self.effect_preview),
-                        );
-                    }
                 });
             });
 
@@ -1886,26 +1776,111 @@ impl NtscApp {
             .show_inside(ui, |ui| {
                 ui.visuals_mut().clip_rect_margin = 0.0;
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    if let Some(info) = &mut self.pipeline {
-                        let mut timecode = info.last_seek_pos.nseconds();
+                    ui.horizontal(|ui| {
+                        let btn_widget = egui::Button::new(match &self.pipeline {
+                            Some(PipelineInfo { pipeline, .. }) => {
+                                let state = pipeline.current_state();
+                                match state {
+                                    gstreamer::State::Paused | gstreamer::State::Ready => "▶",
+                                    gstreamer::State::Playing => "⏸",
+                                    _ => "▶",
+                                }
+                            }
+                            None => "▶",
+                        });
+                        let btn = ui.add_sized(
+                            vec2(
+                                ui.spacing().interact_size.y * 1.5,
+                                ui.spacing().interact_size.y * 1.5,
+                            ),
+                            btn_widget,
+                        );
 
-                        let duration = info.pipeline.query_duration::<ClockTime>();
-
-                        if let Some(duration) = duration
-                            && ui
-                                .add(Timeline::new(
-                                    &mut timecode,
-                                    0..=duration.nseconds(),
-                                    framerate,
-                                ))
-                                .changed()
+                        let ctx = ui.ctx();
+                        if !ctx.wants_keyboard_input()
+                            && ctx.input(|i| {
+                                i.events.iter().any(|event| {
+                                    if let egui::Event::Key {
+                                        key,
+                                        pressed,
+                                        repeat,
+                                        modifiers,
+                                        ..
+                                    } = event
+                                    {
+                                        *key == egui::Key::Space
+                                            && *pressed
+                                            && !repeat
+                                            && modifiers.is_none()
+                                    } else {
+                                        false
+                                    }
+                                })
+                            })
                         {
-                            let _ = info.pipeline.seek_simple(
-                                gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
-                                ClockTime::from_nseconds(timecode),
-                            );
+                            let res = self.pipeline.as_mut().map(|p| p.toggle_playing());
+                            if let Some(res) = res {
+                                self.handle_result(res);
+                            }
                         }
-                    }
+
+                        if btn.clicked() {
+                            let res = self.pipeline.as_mut().map(|p| p.toggle_playing());
+                            if let Some(res) = res {
+                                self.handle_result(res);
+                            }
+                        }
+
+                        if let Some(info) = &mut self.pipeline {
+                            let mut timecode = info.last_seek_pos.nseconds();
+                            let duration = info.pipeline.query_duration::<ClockTime>();
+                            let mut timecode_ms = last_seek_pos.nseconds() as f64
+                                / ClockTime::MSECOND.nseconds() as f64;
+                            let frame_pace = if let Some(framerate) = framerate {
+                                framerate.denom() as f64 / framerate.numer() as f64
+                            } else {
+                                1f64 / 30f64
+                            };
+
+                            let mut drag_value = egui::DragValue::new(&mut timecode_ms)
+                                .custom_formatter(|value, _| {
+                                    clock_time_format(
+                                        (value * ClockTime::MSECOND.nseconds() as f64) as u64,
+                                    )
+                                })
+                                .custom_parser(clock_time_parser)
+                                .speed(frame_pace * 1000.0 * 0.5);
+
+                            if let Some(duration) = duration {
+                                drag_value = drag_value.range(0..=duration.mseconds());
+                            }
+
+                            if ui.add(drag_value).changed() {
+                                // don't use KEY_UNIT here; it causes seeking to often be very inaccurate (almost a second of deviation)
+                                let _ = info.pipeline.seek_simple(
+                                    gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
+                                    ClockTime::from_nseconds(
+                                        (timecode_ms * ClockTime::MSECOND.nseconds() as f64) as u64,
+                                    ),
+                                );
+                            }
+
+                            if let Some(duration) = duration
+                                && ui
+                                    .add(Timeline::new(
+                                        &mut timecode,
+                                        0..=duration.nseconds(),
+                                        framerate,
+                                    ))
+                                    .changed()
+                            {
+                                let _ = info.pipeline.seek_simple(
+                                    gstreamer::SeekFlags::FLUSH | gstreamer::SeekFlags::ACCURATE,
+                                    ClockTime::from_nseconds(timecode),
+                                );
+                            }
+                        }
+                    });
                     egui::ScrollArea::both()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
@@ -2313,6 +2288,11 @@ impl NtscApp {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.selectable_value(
                                 &mut self.left_panel_state,
+                                LeftPanelState::Presets,
+                                "Presets",
+                            );
+                            ui.selectable_value(
+                                &mut self.left_panel_state,
                                 LeftPanelState::EffectSettings,
                                 "Effect",
                             );
@@ -2327,6 +2307,9 @@ impl NtscApp {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(0.0))
                     .show_inside(ui, |ui| match self.left_panel_state {
+                        LeftPanelState::Presets => {
+                            self.show_preset_settings(ui, frame);
+                        }
                         LeftPanelState::EffectSettings => {
                             self.show_effect_settings(ui, frame);
                         }
@@ -2337,9 +2320,9 @@ impl NtscApp {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(0.0))
+            .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(8.0))
             .show(ctx, |ui| {
-                ui.visuals_mut().clip_rect_margin = 0.0;
+                ui.visuals_mut().clip_rect_margin = 4.0;
                 self.show_video_pane(ui, frame);
             });
     }

@@ -94,7 +94,12 @@ impl NtscEffectRunner {
             #[cfg(feature = "gpu-wgpu")]
             BackendType::Wgpu => {
                 let mut frame = self.wgpu_backend.as_mut().unwrap().upload_frame(src);
-                self.wgpu_backend.as_mut().unwrap().apply_effect(effect, &mut frame, frame_num, scale_factor);
+                self.wgpu_backend.as_mut().unwrap().apply_effect(
+                    effect,
+                    &mut frame,
+                    frame_num,
+                    scale_factor,
+                );
                 frame.download(src);
             }
             BackendType::Auto => unreachable!("Auto should have resolved to a concrete backend"),

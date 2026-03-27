@@ -7,7 +7,7 @@ pub mod wgpu_backend;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendType {
     /// Always use the CPU.
     Cpu,
@@ -15,13 +15,8 @@ pub enum BackendType {
     #[cfg(feature = "gpu-wgpu")]
     Wgpu,
     /// Automatically select the best available backend (WGPU if supported, otherwise CPU).
+    #[default]
     Auto,
-}
-
-impl Default for BackendType {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// Abstract representation of a frame or buffer that lives on the GPU.

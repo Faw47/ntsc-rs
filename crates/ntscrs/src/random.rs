@@ -65,6 +65,16 @@ pub struct Seeder {
     state: SipHasher,
 }
 
+#[inline(always)]
+pub fn fast_hash(mut h: u64) -> u64 {
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xff51afd7ed558ccd);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+    h ^= h >> 33;
+    h
+}
+
 impl Seeder {
     pub fn new<T: Hash>(seed: T) -> Self {
         let mut hasher = SipHasher::new_with_keys(0, 0);

@@ -9,7 +9,7 @@ use crate::{
     backend::{BackendManager, BackendPreference, FrameDescriptor, RuntimeBackend},
     filter::TransferFunction,
     noise::{Fbm, Simplex, Simplex1d, Simplex2d, add_noise_1d, sample_noise_1d, sample_noise_2d},
-    random::{Geometric, Seeder},
+    random::{Geometric, Seeder, fast_hash},
     settings::standard::*,
     shift::{BoundaryHandling, shift_row, shift_row_to},
     thread_pool::{self, ZipChunks, with_thread_pool},
@@ -607,7 +607,7 @@ mod noise_seeds {
 /// Helper function to apply gradient noise to a single row of a single plane.
 fn video_noise_line(
     row: &mut [f32],
-    seeder: &Seeder,
+    base_seed: u64,
     level: Level,
     index: usize,
     frequency: f32,
@@ -615,7 +615,8 @@ fn video_noise_line(
     detail: u32,
 ) {
     let width = row.len();
-    let mut rng = Xoshiro256PlusPlus::seed_from_u64(seeder.clone().mix(index as u64).finalize());
+    let mut rng =
+        Xoshiro256PlusPlus::seed_from_u64(fast_hash(base_seed.wrapping_add(index as u64)));
     let noise_seed = rng.next_u32();
     let offset = rng.random::<f32>() * width as f32;
 
@@ -633,14 +634,15 @@ fn video_noise_line(
 /// Add gradient noise to an NTSC-encoded (composite) signal.
 fn composite_noise(yiq: &mut YiqView, info: &CommonInfo, noise_settings: &FbmNoiseSettings) {
     let width = yiq.dimensions.0;
-    let seeder = Seeder::new(info.seed)
+    let base_seed = Seeder::new(info.seed)
         .mix(noise_seeds::VIDEO_COMPOSITE)
-        .mix(info.frame_num);
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([yiq.y], width).par_for_each(|index, [row]| {
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             noise_settings.frequency / info.horizontal_scale,
@@ -658,12 +660,15 @@ fn plane_noise(
     settings: &FbmNoiseSettings,
     noise_seed: u64,
 ) {
-    let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+    let base_seed = Seeder::new(info.seed)
+        .mix(noise_seed)
+        .mix(info.frame_num)
+        .finalize::<u64>();
 
     ZipChunks::new([plane], width).par_for_each(|index, [row]| {
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             settings.frequency / info.horizontal_scale,
@@ -710,12 +715,7 @@ fn chroma_phase_noise(yiq: &mut YiqView, info: &CommonInfo, intensity: f32) {
     ZipChunks::new([yiq.i, yiq.q], width).par_for_each(|index, [i, q]| {
         // Simple hash to generate a per-line random value from the base seed and line index.
         // This is much faster than cloning and finalizing a SipHasher or re-seeding Xoshiro for every line.
-        let mut h = seed.wrapping_add(index as u64);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xff51afd7ed558ccd);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
-        h ^= h >> 33;
+        let h = fast_hash(seed.wrapping_add(index as u64));
 
         // Map the u64 to a f32 in the range [0.0, 1.0)
         let val = (h as f32) / (u64::MAX as f32 + 1.0);
@@ -942,7 +942,7 @@ fn tracking_noise(
 
         video_noise_line(
             row,
-            &seeder,
+            base_seed,
             info.level,
             index,
             0.25 / info.horizontal_scale,
@@ -950,12 +950,7 @@ fn tracking_noise(
             1,
         );
 
-        let mut h = base_seed.wrapping_add(index as u64);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xff51afd7ed558ccd);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
-        h ^= h >> 33;
+        let h = fast_hash(base_seed.wrapping_add(index as u64));
         row_speckles(
             row,
             &mut Xoshiro256PlusPlus::seed_from_u64(h),
@@ -974,12 +969,7 @@ fn snow(yiq: &mut YiqView, info: &CommonInfo, intensity: f32, anisotropy: f32) {
         .finalize::<u64>();
 
     ZipChunks::new([yiq.y], yiq.dimensions.0).par_for_each(|index, [row]| {
-        let mut h = seed.wrapping_add(index as u64);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xff51afd7ed558ccd);
-        h ^= h >> 33;
-        h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
-        h ^= h >> 33;
+        let h = fast_hash(seed.wrapping_add(index as u64));
 
         row_speckles(
             row,
@@ -1653,11 +1643,14 @@ mod tests {
         settings: &FbmNoiseSettings,
         noise_seed: u64,
     ) {
-        let seeder = Seeder::new(info.seed).mix(noise_seed).mix(info.frame_num);
+        let base_seed = Seeder::new(info.seed)
+            .mix(noise_seed)
+            .mix(info.frame_num)
+            .finalize::<u64>();
         for (index, row) in plane.chunks_exact_mut(width).enumerate() {
             video_noise_line(
                 row,
-                &seeder,
+                base_seed,
                 info.level,
                 index,
                 settings.frequency / info.horizontal_scale,

@@ -68,7 +68,6 @@ use super::{
         StillImageSettings,
     },
     system_fonts::system_fallback_fonts,
-    ui_theme,
 };
 
 const EXPERIMENTAL_EASY_MODE: bool = false;
@@ -190,7 +189,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
             easy_mode_enabled &= EXPERIMENTAL_EASY_MODE;
 
-            ui_theme::configure_style(&ctx);
+            ctx.style_mut(|style| style.interaction.tooltip_delay = 0.5);
             Ok(Box::new(NtscApp::new(
                 ctx,
                 settings_list,
@@ -617,7 +616,11 @@ impl NtscApp {
                         label.on_hover_text(description);
                     }
 
-                    if changed {
+                    if resp.double_clicked() {
+                        let default_val = (descriptor.id.get)(&T::default());
+                        let _ = (descriptor.id.set)(effect_settings, default_val);
+                        changed = true;
+                    } else if changed {
                         effect_settings
                             .set_field::<i32>(&descriptor.id, value)
                             .unwrap();
@@ -645,7 +648,7 @@ impl NtscApp {
                     .iter()
                     .find(|option| option.index == selected_index)
                     .unwrap();
-                egui::ComboBox::new(&descriptor.id, descriptor.label)
+                let resp = egui::ComboBox::new(&descriptor.id, descriptor.label)
                     .selected_text(selected_item.label)
                     .show_ui(ui, |ui| {
                         for item in options {
@@ -665,7 +668,15 @@ impl NtscApp {
                             };
                         }
                     })
-                    .response
+                    .response;
+
+                if resp.double_clicked() {
+                    let default_val = (descriptor.id.get)(&T::default());
+                    let _ = (descriptor.id.set)(effect_settings, default_val);
+                    changed = true;
+                }
+                
+                resp
             }
             SettingDescriptor {
                 kind: SettingKind::Percentage { logarithmic, .. },
@@ -681,7 +692,11 @@ impl NtscApp {
                         .logarithmic(*logarithmic),
                 );
 
-                if slider.changed() {
+                if slider.double_clicked() {
+                    let default_val = (descriptor.id.get)(&T::default());
+                    let _ = (descriptor.id.set)(effect_settings, default_val);
+                    changed = true;
+                } else if slider.changed() {
                     let _ = effect_settings.set_field(&descriptor.id, value);
                 }
 
@@ -699,7 +714,11 @@ impl NtscApp {
                         .custom_parser(parse_expression_string),
                 );
 
-                if slider.changed() {
+                if slider.double_clicked() {
+                    let default_val = (descriptor.id.get)(&T::default());
+                    let _ = (descriptor.id.set)(effect_settings, default_val);
+                    changed = true;
+                } else if slider.changed() {
                     effect_settings
                         .set_field::<i32>(&descriptor.id, value)
                         .unwrap();
@@ -723,7 +742,11 @@ impl NtscApp {
                         .logarithmic(*logarithmic),
                 );
 
-                if slider.changed() {
+                if slider.double_clicked() {
+                    let default_val = (descriptor.id.get)(&T::default());
+                    let _ = (descriptor.id.set)(effect_settings, default_val);
+                    changed = true;
+                } else if slider.changed() {
                     let _ = effect_settings.set_field(&descriptor.id, value);
                 }
 
@@ -862,7 +885,7 @@ impl NtscApp {
         changed
     }
 
-    fn show_preset_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_preset_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.visuals_mut().clip_rect_margin = 4.0;
             egui::ScrollArea::vertical()
@@ -1028,7 +1051,7 @@ impl NtscApp {
         });
     }
 
-    fn show_effect_settings(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    pub(crate) fn show_effect_settings(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(egui::DroppedFile {
                 path: Some(preset_path),
@@ -1148,7 +1171,7 @@ impl NtscApp {
         spacing.item_spacing.y = 8.0;
     }
 
-    fn show_render_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_render_settings(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             Self::setup_control_rows(ui);
             let mut codec_changed = false;
@@ -1450,7 +1473,7 @@ impl NtscApp {
         });
     }
 
-    fn show_video_pane(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    pub(crate) fn show_video_pane(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let last_seek_pos = if let Some(info) = &mut self.pipeline {
             // While seeking, GStreamer sometimes doesn't return a timecode. In that case, use the last timecode it
             // did respond with.
@@ -2016,7 +2039,7 @@ impl NtscApp {
             });
     }
 
-    fn show_credits_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show_credits_dialog(&mut self, ctx: &egui::Context) {
         egui::Window::new("About + Credits")
             .open(&mut self.credits_dialog_open)
             .default_width(400.0)
@@ -2064,7 +2087,7 @@ impl NtscApp {
             });
     }
 
-    fn show_app(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    pub(crate) fn show_app(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if self.credits_dialog_open {
             self.show_credits_dialog(ctx);
         }
@@ -2199,7 +2222,6 @@ impl NtscApp {
                                 // Results in a bit of "theme tearing" since every widget rendered after this will use a
                                 // different color scheme than those rendered before it. Not really noticeable in practice.
                                 ui.ctx().set_theme(theme_preference);
-                                ui_theme::apply_themed_visuals(ui.ctx());
                                 ui.close();
                             }
                         });
@@ -2329,59 +2351,21 @@ impl NtscApp {
             });
     }
 
-    fn show_loading_screen(ctx: &egui::Context) {
-        let pal = ui_theme::palette(ctx);
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(pal.app_bg))
-            .show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(ui.available_height() * 0.35);
-                        ui.add(
-                            egui::Spinner::new()
-                                .size(72.0)
-                                .color(pal.accent),
-                        );
-                        ui.add_space(16.0);
-                        ui.label(
-                            egui::RichText::new("Initializing…")
-                                .size(16.0)
-                                .color(pal.text_muted),
-                        );
-                        ui.add_space(4.0);
-                        ui.label(
-                            egui::RichText::new("This may take a moment on first launch")
-                                .size(12.0)
-                                .color(pal.text_muted.gamma_multiply(0.6)),
-                        );
-                    });
-                });
+    pub(crate) fn show_loading_screen(ctx: &egui::Context) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.centered_and_justified(|ui| {
+                ui.add(egui::Spinner::new().size(128.0));
             });
+        });
     }
 
-    fn show_error_screen(ctx: &egui::Context, error: &ApplicationError) {
-        let pal = ui_theme::palette(ctx);
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(pal.app_bg))
-            .show(ctx, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(ui.available_height() * 0.3);
-                        ui.label(
-                            egui::RichText::new("⚠")
-                                .size(48.0)
-                                .color(pal.tone_danger),
-                        );
-                        ui.add_space(12.0);
-                        ui.heading("An error occurred while loading");
-                        ui.add_space(8.0);
-                        ui_theme::status_frame(ui, ui_theme::StatusTone::Danger)
-                            .show(ui, |ui| {
-                                ui.label(error.to_string());
-                            });
-                    });
-                });
+    pub(crate) fn show_error_screen(ctx: &egui::Context, error: &ApplicationError) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
+                ui.heading("An error occurred while loading");
+                ui.label(error.to_string());
             });
+        });
     }
 
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {

@@ -5,8 +5,23 @@
 struct Params {
     width: u32,
     frame_num: u32,
+    seed: u32,
+    noise_idx: u32,
+    
+    noise_frequency: f32,
+    noise_intensity: f32,
+    noise_detail: u32,
+    snow_anisotropy: f32,
+
     phase_shift: u32,
     phase_offset: i32,
+    filter_mode: u32,
+    chroma_delay_horizontal: f32,
+
+    chroma_delay_vertical: i32,
+    horizontal_scale: f32,
+    _pad1: u32,
+    _pad2: u32,
 }
 @group(1) @binding(0) var<uniform> params: Params;
 

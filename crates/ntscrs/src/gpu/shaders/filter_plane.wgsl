@@ -1,41 +1,88 @@
 @group(0) @binding(0) var<storage, read_write> y_plane: array<f32>;
+@group(0) @binding(1) var<storage, read_write> i_plane: array<f32>;
+@group(0) @binding(2) var<storage, read_write> q_plane: array<f32>;
+@group(0) @binding(3) var<storage, read_write> scratch_plane: array<f32>;
 
 struct Params {
     width: u32,
     frame_num: u32,
+    seed: u32,
+    noise_idx: u32,
+    
+    noise_frequency: f32,
+    noise_intensity: f32,
+    noise_detail: u32,
+    snow_anisotropy: f32,
+
+    phase_shift: u32,
+    phase_offset: i32,
+    filter_mode: u32,
+    chroma_delay_horizontal: f32,
+
+    chroma_delay_vertical: i32,
+    horizontal_scale: f32,
     _pad1: u32,
     _pad2: u32,
 }
 @group(1) @binding(0) var<uniform> params: Params;
 
-// Note: IIR recursive filters are hard to parallelize per-pixel because of dependencies.
-// However, we can trivially parallelize across rows since rows are independent.
-// Workgroup size is 1 per thread representing a row to keep logic simple without cross thread communication
-// Or we map threads to rows: 64 threads, 1 row per thread.
+struct FilterCoeffs {
+    num: vec4<f32>,
+    den: vec4<f32>,
+    z_initial: vec4<f32>,
+    delay: u32,
+    filter_len: u32,
+    plane_idx: u32, // 0: y, 1: i, 2: q
+    _pad1: u32,
+}
+@group(2) @binding(0) var<uniform> filter_coeffs: FilterCoeffs;
 
 @compute @workgroup_size(64, 1, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let row_idx = global_id.x;
     let width = params.width;
-    let num_rows = arrayLength(&y_plane) / width;
-
-    if (row_idx >= num_rows) {
+    let height = arrayLength(&y_plane) / width;
+    
+    if (row_idx >= height) {
         return;
     }
 
-    // Example simplified filter_plane (Butterworth or constant k placeholder)
-    // We iterate sequentially over the row.
-    var prev1 = 0.0;
-    var prev2 = 0.0;
+    var z = filter_coeffs.z_initial;
+    let num = filter_coeffs.num;
+    let den = filter_coeffs.den;
+    let filter_len = filter_coeffs.filter_len;
+    let delay = filter_coeffs.delay;
+    let plane_idx = filter_coeffs.plane_idx;
 
-    // In actual implementation we'd pass in numerator and denominator coefficients
     let row_start = row_idx * width;
 
-    for (var i = 0u; i < width; i++) {
-        let idx = row_start + i;
-        let val = y_plane[idx];
+    // We process width + delay iterations.
+    for (var i = 0u; i < width + delay; i++) {
+        let read_idx = row_start + min(i, width - 1u);
+        var sample_val: f32;
+        if (plane_idx == 0u) { sample_val = y_plane[read_idx]; }
+        else if (plane_idx == 1u) { sample_val = i_plane[read_idx]; }
+        else if (plane_idx == 2u) { sample_val = q_plane[read_idx]; }
+        else { sample_val = scratch_plane[read_idx]; }
 
-        // do IIR calculation...
-        // y_plane[idx] = ...
+        let filt_sample = z.x + (num.x * sample_val);
+
+        if (filter_len > 1u) {
+            z.x = z.y + (num.y * sample_val) - (den.x * filt_sample);
+        }
+        if (filter_len > 2u) {
+            z.y = z.z + (num.z * sample_val) - (den.y * filt_sample);
+        }
+        if (filter_len > 3u) {
+            z.z = z.w + (num.w * sample_val) - (den.z * filt_sample);
+        }
+
+        if (i >= delay) {
+            let write_idx = row_start + i - delay;
+            if (plane_idx == 0u) { y_plane[write_idx] = filt_sample; }
+            else if (plane_idx == 1u) { i_plane[write_idx] = filt_sample; }
+            else if (plane_idx == 2u) { q_plane[write_idx] = filt_sample; }
+            else { scratch_plane[write_idx] = filt_sample; }
+        }
     }
 }

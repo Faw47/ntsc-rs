@@ -183,8 +183,8 @@ impl BackendManager {
 
         let feature_enabled = match backend {
             RuntimeBackend::Cpu => true,
-            RuntimeBackend::Wgpu => cfg!(feature = "wgpu-backend"),
-            RuntimeBackend::Cuda => cfg!(feature = "cuda-backend"),
+            RuntimeBackend::Wgpu => cfg!(feature = "gpu-wgpu"),
+            RuntimeBackend::Cuda => cfg!(feature = "gpu-cuda"),
         };
 
         if !feature_enabled {

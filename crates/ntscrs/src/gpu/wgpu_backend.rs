@@ -324,23 +324,45 @@ impl GpuBackend for WgpuBackend {
         struct ShaderParams {
             width: u32,
             frame_num: u32,
+            seed: u32,
+            noise_idx: u32,
+            
+            noise_frequency: f32,
+            noise_intensity: f32,
+            noise_detail: u32,
+            snow_anisotropy: f32,
+
             phase_shift: u32,
             phase_offset: i32,
             filter_mode: u32,
             chroma_delay_horizontal: f32,
+
             chroma_delay_vertical: i32,
-            _pad: u32, // padding to 16 bytes alignment
+            horizontal_scale: f32,
+            _pad1: u32,
+            _pad2: u32,
         }
 
-        let params = ShaderParams {
+        let mut params = ShaderParams {
             width: frame.width as u32,
             frame_num: frame_num as u32,
+            seed: effect.random_seed as u32,
+            noise_idx: 0,
+            
+            noise_frequency: 0.0,
+            noise_intensity: 0.0,
+            noise_detail: 0,
+            snow_anisotropy: 0.0,
+
             phase_shift: effect.video_scanline_phase_shift as u32,
             phase_offset: effect.video_scanline_phase_shift_offset,
             filter_mode: effect.chroma_demodulation as u32,
             chroma_delay_horizontal: effect.chroma_delay_horizontal,
+
             chroma_delay_vertical: effect.chroma_delay_vertical,
-            _pad: 0,
+            horizontal_scale: effect.scale.as_ref().map(|s| s.horizontal_scale).unwrap_or(1.0),
+            _pad1: 0,
+            _pad2: 0,
         };
 
         let params_buffer = self

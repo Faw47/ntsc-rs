@@ -68,6 +68,7 @@ use super::{
         StillImageSettings,
     },
     system_fonts::system_fallback_fonts,
+    ui_theme,
 };
 
 const EXPERIMENTAL_EASY_MODE: bool = false;
@@ -189,7 +190,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
             easy_mode_enabled &= EXPERIMENTAL_EASY_MODE;
 
-            ctx.style_mut(|style| style.interaction.tooltip_delay = 0.5);
+            ui_theme::configure_style(&ctx);
             Ok(Box::new(NtscApp::new(
                 ctx,
                 settings_list,
@@ -2198,6 +2199,7 @@ impl NtscApp {
                                 // Results in a bit of "theme tearing" since every widget rendered after this will use a
                                 // different color scheme than those rendered before it. Not really noticeable in practice.
                                 ui.ctx().set_theme(theme_preference);
+                                ui_theme::apply_themed_visuals(ui.ctx());
                                 ui.close();
                             }
                         });
@@ -2328,20 +2330,58 @@ impl NtscApp {
     }
 
     fn show_loading_screen(ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.add(egui::Spinner::new().size(128.0));
+        let pal = ui_theme::palette(ctx);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(pal.app_bg))
+            .show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(ui.available_height() * 0.35);
+                        ui.add(
+                            egui::Spinner::new()
+                                .size(72.0)
+                                .color(pal.accent),
+                        );
+                        ui.add_space(16.0);
+                        ui.label(
+                            egui::RichText::new("Initializing…")
+                                .size(16.0)
+                                .color(pal.text_muted),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("This may take a moment on first launch")
+                                .size(12.0)
+                                .color(pal.text_muted.gamma_multiply(0.6)),
+                        );
+                    });
+                });
             });
-        });
     }
 
     fn show_error_screen(ctx: &egui::Context, error: &ApplicationError) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.heading("An error occurred while loading");
-                ui.label(error.to_string());
+        let pal = ui_theme::palette(ctx);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(pal.app_bg))
+            .show(ctx, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(ui.available_height() * 0.3);
+                        ui.label(
+                            egui::RichText::new("⚠")
+                                .size(48.0)
+                                .color(pal.tone_danger),
+                        );
+                        ui.add_space(12.0);
+                        ui.heading("An error occurred while loading");
+                        ui.add_space(8.0);
+                        ui_theme::status_frame(ui, ui_theme::StatusTone::Danger)
+                            .show(ui, |ui| {
+                                ui.label(error.to_string());
+                            });
+                    });
+                });
             });
-        });
     }
 
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {

@@ -23,6 +23,7 @@ pub mod render_settings;
 pub mod system_fonts;
 pub mod third_party_licenses_dialog;
 pub mod ui_context;
+pub mod ui_theme;
 pub mod update_dialog;
 
 pub type AppFn = Box<dyn FnOnce(&mut NtscApp) -> Result<(), error::ApplicationError> + Send>;

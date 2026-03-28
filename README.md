@@ -13,6 +13,18 @@
 
 ![Screenshot of the ntsc-rs standalone application](./docs/img/appdemo.png)
 
+## About this fork
+
+This repository is derived from **[ntsc-rs](https://github.com/ntsc-rs/ntsc-rs)**. The original project, its algorithms, and naming remain the work of that upstream team; this fork does not claim ownership of their design or intellectual property.
+
+**Performance.** Processing has been moved onto a **wgpu**-based GPU path. On suitable hardware and typical settings, throughput can reach **up to about six times** that of the original CPU-oriented pipeline in upstream ntsc-rs. Actual speedups depend on GPU, resolution, preset, and system load.
+
+**Pipeline fidelity.** A few effect stages and parameters differ slightly from upstream. The intent is the same nostalgic NTSC/VHS look with faster turnaround, not a pixel-perfect match to every pass in the reference implementation.
+
+**User interface.** The standalone GUI has been reworked for clearer structure and a more deliberate visual treatment than the stock layout.
+
+**How this was built.** Much of the engineering here—including iterative refactors, integration work, and even parts of this README—was carried out with **large language model** assistance, on top of the upstream codebase. The upstream repository remains the authoritative source for the effect model and the original Rust port.
+
 ## Download and Install
 
 The latest version of ntsc-rs can be downloaded from [the releases page](https://github.com/valadaptive/ntsc-rs/releases).

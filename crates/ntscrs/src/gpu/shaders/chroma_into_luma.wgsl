@@ -1,13 +1,13 @@
 @group(0) @binding(0) var<storage, read_write> y_plane: array<f32>;
-@group(0) @binding(1) var<storage, read> i_plane: array<f32>;
-@group(0) @binding(2) var<storage, read> q_plane: array<f32>;
+@group(0) @binding(1) var<storage, read_write> i_plane: array<f32>;
+@group(0) @binding(2) var<storage, read_write> q_plane: array<f32>;
 
-struct Params {
+struct ShaderParams {
     width: u32,
     frame_num: u32,
-    seed: u32,
-    noise_idx: u32,
-    
+    seed_hi: u32,
+    seed_lo: u32,
+
     noise_frequency: f32,
     noise_intensity: f32,
     noise_detail: u32,
@@ -20,10 +20,15 @@ struct Params {
 
     chroma_delay_vertical: i32,
     horizontal_scale: f32,
+    vertical_scale: f32,
+    mid_line_position: f32,
+
+    mid_line_enabled: u32,
     _pad1: u32,
     _pad2: u32,
+    _pad3: u32,
 }
-@group(1) @binding(0) var<uniform> params: Params;
+@group(1) @binding(0) var<uniform> params: ShaderParams;
 
 // Compute I_MULT and Q_MULT from phase
 fn chroma_phase_shift(line_num: u32, frame_num: u32, phase_shift: u32, phase_offset: i32) -> u32 {
@@ -37,18 +42,21 @@ fn chroma_phase_shift(line_num: u32, frame_num: u32, phase_shift: u32, phase_off
     return 0u;
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    if (index >= arrayLength(&y_plane)) {
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
+    let width = params.width;
+    let height = arrayLength(&y_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
         return;
     }
 
-    let line_num = index / params.width;
-    let xi = chroma_phase_shift(line_num * 2u, params.frame_num, params.phase_shift, params.phase_offset);
+    let index = row_idx * width + col_idx;
+    let xi = chroma_phase_shift(row_idx * 2u, params.frame_num, params.phase_shift, params.phase_offset);
 
-    let x = index % params.width;
-    let phase = (x + xi) & 3u;
+    let phase = (col_idx + xi) & 3u;
 
     var i_mult = 0.0;
     var q_mult = 0.0;

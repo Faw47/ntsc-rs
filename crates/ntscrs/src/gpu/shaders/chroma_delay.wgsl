@@ -3,12 +3,12 @@
 @group(0) @binding(2) var<storage, read_write> q_plane: array<f32>;
 @group(0) @binding(3) var<storage, read_write> scratch_plane: array<f32>;
 
-struct Params {
+struct ShaderParams {
     width: u32,
     frame_num: u32,
-    seed: u32,
-    noise_idx: u32,
-    
+    seed_hi: u32,
+    seed_lo: u32,
+
     noise_frequency: f32,
     noise_intensity: f32,
     noise_detail: u32,
@@ -21,25 +21,31 @@ struct Params {
 
     chroma_delay_vertical: i32,
     horizontal_scale: f32,
+    vertical_scale: f32,
+    mid_line_position: f32,
+
+    mid_line_enabled: u32,
     _pad1: u32,
     _pad2: u32,
+    _pad3: u32,
 }
-@group(1) @binding(0) var<uniform> params: Params;
+@group(1) @binding(0) var<uniform> params: ShaderParams;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    if (index >= arrayLength(&i_plane)) {
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
+    let width = params.width;
+    let height = arrayLength(&i_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
         return;
     }
 
-    let width = params.width;
-    let x = index % width;
-    let y = index / width;
-    let height = arrayLength(&i_plane) / width;
+    let index = row_idx * width + col_idx;
 
     // Apply vertical offset
-    let dst_y = i32(y) - params.chroma_delay_vertical;
+    let dst_y = i32(row_idx) - params.chroma_delay_vertical;
     if (dst_y < 0 || dst_y >= i32(height)) {
         i_plane[index] = 0.0;
         q_plane[index] = 0.0;
@@ -47,10 +53,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     // Apply horizontal offset
-    // This is continuous so we need to interpolate
-    let src_x_float = f32(x) - params.chroma_delay_horizontal;
+    let src_x_float = f32(col_idx) - params.chroma_delay_horizontal;
 
-    // Nearest neighbor or basic linear interp for shift
+    // Linear interp for shift
     let src_x_left = i32(floor(src_x_float));
     let src_x_right = src_x_left + 1;
     let fract_x = src_x_float - f32(src_x_left);
@@ -63,10 +68,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let left_idx = u32(dst_y) * width + u32(src_x_left);
         i_val += scratch_plane[left_idx] * (1.0 - fract_x);
         q_val += scratch_plane[left_idx + arrayLength(&i_plane)] * (1.0 - fract_x);
-        // Note: For simplicity and buffer passing we use scratch plane here assuming it holds
-        // original I/Q data packed, or we use separate buffers. We will update the rust code to pass I and Q to scratch buffer
-        // Let's assume we do this in multiple passes or we ping-pong.
-        // For now, let's keep it simple: scratch buffer has I in first half, Q in second half.
     }
 
     // Right sample

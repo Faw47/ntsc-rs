@@ -147,6 +147,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 mut easy_mode_enabled,
                 render_settings,
                 scale_settings,
+                recent_files,
             ) = if let Some(storage) = cc.storage {
                 // Load previous effect settings from storage
                 let settings = storage
@@ -169,6 +170,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 let scale_settings =
                     eframe::get_value::<VideoScaleState>(storage, "scale_settings")
                         .unwrap_or_default();
+                let recent_files = eframe::get_value::<Vec<PathBuf>>(storage, "recent_files")
+                    .unwrap_or_default();
 
                 (
                     settings,
@@ -176,6 +179,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     easy_mode_enabled,
                     render_settings,
                     scale_settings,
+                    recent_files,
                 )
             } else {
                 (
@@ -184,6 +188,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     true,
                     RenderSettings::default(),
                     VideoScaleState::default(),
+                    Vec::new(),
                 )
             };
 
@@ -199,6 +204,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 easy_mode_enabled,
                 render_settings,
                 scale_settings,
+                recent_files,
                 init_state,
             )))
         }),
@@ -217,6 +223,7 @@ impl NtscApp {
         easy_mode_enabled: bool,
         render_settings: RenderSettings,
         scale_settings: VideoScaleState,
+        recent_files: Vec<PathBuf>,
         gstreamer_init: GstreamerInitState,
     ) -> Self {
         Self {
@@ -247,6 +254,7 @@ impl NtscApp {
             license_dialog_open: false,
             update_dialog: UpdateDialogState::Closed,
             image_sequence_dialog_queued_render_job: None,
+            recent_files,
         }
     }
 
@@ -280,9 +288,18 @@ impl NtscApp {
         ));
 
         self.pipeline = Some(
-            self.create_preview_pipeline(ctx, path)
+            self.create_preview_pipeline(ctx, path.clone())
                 .context(LoadVideoSnafu)?,
         );
+
+        if !self.recent_files.contains(&path) {
+            self.recent_files.insert(0, path);
+            self.recent_files.truncate(10);
+        } else {
+            let index = self.recent_files.iter().position(|r| r == &path).unwrap();
+            self.recent_files.remove(index);
+            self.recent_files.insert(0, path);
+        }
 
         Ok(())
     }
@@ -2457,5 +2474,6 @@ impl eframe::App for NtscApp {
 
         eframe::set_value(storage, "render_settings", &self.render_settings);
         eframe::set_value(storage, "scale_settings", &self.video_scale);
+        eframe::set_value(storage, "recent_files", &self.recent_files);
     }
 }

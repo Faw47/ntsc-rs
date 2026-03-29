@@ -589,7 +589,7 @@ fn luma_smear(yiq: &mut YiqView, info: &CommonInfo, amount: f32) {
 
 /// We use a seeded RNG to generate random noise deterministically, but we don't want every pass which uses noise to use
 /// the *same* noise. Each pass gets its own random seed which is mixed into the RNG.
-mod noise_seeds {
+pub(crate) mod noise_seeds {
     pub const VIDEO_COMPOSITE: u64 = 0;
     pub const HEAD_SWITCHING: u64 = 2;
     pub const TRACKING_NOISE: u64 = 3;

@@ -3,12 +3,12 @@
 @group(0) @binding(2) var<storage, read_write> q_plane: array<f32>;
 @group(0) @binding(3) var<storage, read_write> scratch_plane: array<f32>;
 
-struct Params {
+struct ShaderParams {
     width: u32,
     frame_num: u32,
     seed: u32,
     noise_idx: u32,
-    
+
     noise_frequency: f32,
     noise_intensity: f32,
     noise_detail: u32,
@@ -21,10 +21,14 @@ struct Params {
 
     chroma_delay_vertical: i32,
     horizontal_scale: f32,
+    vertical_scale: f32,
     _pad1: u32,
     _pad2: u32,
+    _pad3: u32,
+    _pad4: u32,
+    _pad5: u32,
 }
-@group(1) @binding(0) var<uniform> params: Params;
+@group(1) @binding(0) var<uniform> params: ShaderParams;
 
 struct FilterCoeffs {
     num: vec4<f32>,
@@ -33,7 +37,7 @@ struct FilterCoeffs {
     delay: u32,
     filter_len: u32,
     plane_idx: u32, // 0: y, 1: i, 2: q
-    _pad1: u32,
+    initial_condition_mode: u32, // 0: use z_initial, 1: FirstSample
 }
 @group(2) @binding(0) var<uniform> filter_coeffs: FilterCoeffs;
 
@@ -47,6 +51,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
+    let row_start = row_idx * width;
     var z = filter_coeffs.z_initial;
     let num = filter_coeffs.num;
     let den = filter_coeffs.den;
@@ -54,7 +59,45 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let delay = filter_coeffs.delay;
     let plane_idx = filter_coeffs.plane_idx;
 
-    let row_start = row_idx * width;
+    // Matches TransferFunction::initial_condition_into (scipy) for FirstSample, like the CPU path.
+    if (filter_coeffs.initial_condition_mode == 1u) {
+        var initial_val: f32;
+        if (plane_idx == 0u) { initial_val = y_plane[row_start]; }
+        else if (plane_idx == 1u) { initial_val = i_plane[row_start]; }
+        else if (plane_idx == 2u) { initial_val = q_plane[row_start]; }
+        else { initial_val = scratch_plane[row_start]; }
+
+        z = vec4<f32>(0.0);
+        if (abs(initial_val) > 1e-20) {
+            let fl = filter_len;
+            var b_sum = 0.0;
+            for (var i = 1u; i < fl; i++) {
+                let num_i = select(0.0, num[i], i < 4u);
+                let den_im1 = select(0.0, den[i - 1u], (i - 1u) < 4u);
+                b_sum += num_i - den_im1 * num.x;
+            }
+            var den_sum = 1.0;
+            for (var j = 0u; j < 3u; j++) {
+                if (j < fl - 1u) {
+                    den_sum += den[j];
+                }
+            }
+            let z0_unscaled = b_sum / den_sum;
+            var a_sum = 1.0;
+            var c_sum = 0.0;
+            for (var i = 1u; i < fl - 1u; i++) {
+                let num_i = select(0.0, num[i], i < 4u);
+                let den_im1 = select(0.0, den[i - 1u], (i - 1u) < 4u);
+                a_sum += den_im1;
+                c_sum += num_i - den_im1 * num.x;
+                let zi = (a_sum * z0_unscaled - c_sum) * initial_val;
+                if (i == 1u) { z.y = zi; }
+                else if (i == 2u) { z.z = zi; }
+                else if (i == 3u) { z.w = zi; }
+            }
+            z.x = z0_unscaled * initial_val;
+        }
+    }
 
     // We process width + delay iterations.
     for (var i = 0u; i < width + delay; i++) {

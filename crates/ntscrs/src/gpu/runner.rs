@@ -1,3 +1,5 @@
+#[cfg(feature = "gpu-wgpu")]
+use crate::yiq_fielding::YiqField;
 use crate::{
     gpu::{BackendType, GpuBackend, GpuFrame},
     settings::standard::NtscEffect,
@@ -93,6 +95,15 @@ impl NtscEffectRunner {
             }
             #[cfg(feature = "gpu-wgpu")]
             BackendType::Wgpu => {
+                // WGPU processes one contiguous field buffer; interleaved mode stacks two fields and
+                // requires separate passes (CPU applies the effect twice). Use CPU until GPU supports that.
+                if matches!(
+                    src.field,
+                    YiqField::InterleavedUpper | YiqField::InterleavedLower
+                ) {
+                    effect.apply_effect_to_yiq(src, frame_num, scale_factor);
+                    return;
+                }
                 let mut frame = self.wgpu_backend.as_mut().unwrap().upload_frame(src);
                 self.wgpu_backend.as_mut().unwrap().apply_effect(
                     effect,

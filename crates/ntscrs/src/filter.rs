@@ -111,6 +111,20 @@ impl TransferFunction {
         self.len.get() as usize
     }
 
+    pub fn to_gpu_coeffs(&self, initial: f32) -> ([f32; 4], [f32; 4], [f32; 4]) {
+        let (num, den) = self.num_den();
+        let mut num_arr = [0.0; 4];
+        let mut den_arr = [0.0; 4];
+
+        num_arr[..num.len()].copy_from_slice(num);
+        den_arr[..den.len()].copy_from_slice(den);
+
+        let mut z_initial = [0.0; 4];
+        self.initial_condition_into(initial, &mut z_initial[..self.len()]);
+
+        (num_arr, den_arr, z_initial)
+    }
+
     /// Return initial conditions for the filter that results in a given steady-state value (e.g. "start" the filter as
     /// if every previous sample was the given value).
     fn initial_condition_into(&self, value: f32, dst: &mut [f32]) {

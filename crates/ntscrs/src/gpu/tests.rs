@@ -6,31 +6,28 @@ mod tests {
         yiq_fielding::{Rgbx, YiqField, YiqOwned, YiqView},
     };
 
+    #[cfg(feature = "gpu-wgpu")]
+    fn max_plane_diff(a: &[f32], b: &[f32]) -> f32 {
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0f32, f32::max)
+    }
+
     #[test]
     fn test_wgpu_copy_pass() {
-        // Initialize simple 4x4 image
         let width = 4;
         let height = 4;
         let mut pixels: Vec<f32> = vec![0.0; width * height * 4];
         for i in 0..(width * height) {
-            pixels[i * 4] = i as f32 / 16.0; // R
-            pixels[i * 4 + 1] = i as f32 / 16.0; // G
-            pixels[i * 4 + 2] = i as f32 / 16.0; // B
-            pixels[i * 4 + 3] = 1.0; // A
+            pixels[i * 4] = i as f32 / 16.0;
+            pixels[i * 4 + 1] = i as f32 / 16.0;
+            pixels[i * 4 + 2] = i as f32 / 16.0;
+            pixels[i * 4 + 3] = 1.0;
         }
 
-        let mut yiq = YiqOwned::from_strided_buffer::<Rgbx, f32>(
-            &pixels,
-            width * 4 * std::mem::size_of::<f32>(),
-            width,
-            height,
-            YiqField::Both,
-        );
-        let mut yiq_view = YiqView::from(&mut yiq);
-
-        let mut cpu_pixels = pixels.clone();
         let mut cpu_yiq = YiqOwned::from_strided_buffer::<Rgbx, f32>(
-            &cpu_pixels,
+            &pixels,
             width * 4 * std::mem::size_of::<f32>(),
             width,
             height,
@@ -45,16 +42,89 @@ mod tests {
 
         #[cfg(feature = "gpu-wgpu")]
         {
+            let mut yiq = YiqOwned::from_strided_buffer::<Rgbx, f32>(
+                &pixels,
+                width * 4 * std::mem::size_of::<f32>(),
+                width,
+                height,
+                YiqField::Both,
+            );
+            let mut yiq_view = YiqView::from(&mut yiq);
             let mut wgpu_runner = NtscEffectRunner::new(BackendType::Wgpu);
             if wgpu_runner.active_backend() == BackendType::Wgpu {
                 wgpu_runner.apply_effect(&mut yiq_view, &effect, 0, [1.0, 1.0]);
 
-                // Wgpu currently just copies (no-op compute), so we don't expect it to match CPU
-                // completely right now, but we want to make sure it doesn't crash and returns the
-                // original or modified buffer back properly.
-                // In future steps we'll assert CPU == GPU.
                 assert_eq!(yiq_view.dimensions, cpu_yiq_view.dimensions);
+                const TOL: f32 = 2e-3;
+                assert!(
+                    max_plane_diff(yiq_view.y, cpu_yiq_view.y) < TOL,
+                    "Y plane max diff {}",
+                    max_plane_diff(yiq_view.y, cpu_yiq_view.y)
+                );
+                assert!(
+                    max_plane_diff(yiq_view.i, cpu_yiq_view.i) < TOL,
+                    "I plane max diff {}",
+                    max_plane_diff(yiq_view.i, cpu_yiq_view.i)
+                );
+                assert!(
+                    max_plane_diff(yiq_view.q, cpu_yiq_view.q) < TOL,
+                    "Q plane max diff {}",
+                    max_plane_diff(yiq_view.q, cpu_yiq_view.q)
+                );
             }
+        }
+    }
+
+    #[cfg(feature = "gpu-wgpu")]
+    #[test]
+    fn interleaved_field_wgpu_runner_matches_cpu_reference() {
+        let width = 8;
+        let height = 8;
+        let mut pixels: Vec<f32> = vec![0.0; width * height * 4];
+        for i in 0..(width * height) {
+            let v = (i % 17) as f32 / 17.0;
+            pixels[i * 4] = v;
+            pixels[i * 4 + 1] = v * 0.8;
+            pixels[i * 4 + 2] = v * 0.6;
+            pixels[i * 4 + 3] = 1.0;
+        }
+
+        let effect = NtscEffect::default();
+
+        let mut direct = YiqOwned::from_strided_buffer::<Rgbx, f32>(
+            &pixels,
+            width * 4 * std::mem::size_of::<f32>(),
+            width,
+            height,
+            YiqField::InterleavedUpper,
+        );
+        let mut direct_view = YiqView::from(&mut direct);
+        effect.apply_effect_to_yiq(&mut direct_view, 0, [1.0, 1.0]);
+
+        let mut runner_yiq = YiqOwned::from_strided_buffer::<Rgbx, f32>(
+            &pixels,
+            width * 4 * std::mem::size_of::<f32>(),
+            width,
+            height,
+            YiqField::InterleavedUpper,
+        );
+        let mut runner_view = YiqView::from(&mut runner_yiq);
+        let mut wgpu_runner = NtscEffectRunner::new(BackendType::Wgpu);
+        if wgpu_runner.active_backend() == BackendType::Wgpu {
+            wgpu_runner.apply_effect(&mut runner_view, &effect, 0, [1.0, 1.0]);
+            assert_eq!(direct_view.y.len(), runner_view.y.len());
+            assert!(
+                max_plane_diff(direct_view.y, runner_view.y) < 1e-6,
+                "interleaved Y mismatch"
+            );
+            assert!(
+                max_plane_diff(direct_view.i, runner_view.i) < 1e-6,
+                "interleaved I mismatch"
+            );
+            assert!(
+                max_plane_diff(direct_view.q, runner_view.q) < 1e-6,
+                "interleaved Q mismatch"
+            );
         }
     }
 }

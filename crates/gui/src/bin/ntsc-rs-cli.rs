@@ -16,17 +16,16 @@ use std::ffi::OsStr;
 
 use clap::{
     Arg, ArgAction, ArgGroup, Command, ValueEnum,
-    builder::{EnumValueParser, PathBufValueParser, PossibleValue, StringValueParser, TypedValueParser},
+    builder::{
+        EnumValueParser, PathBufValueParser, PossibleValue, StringValueParser, TypedValueParser,
+    },
     command,
     error::{ContextKind, ContextValue, Error, ErrorKind},
 };
 use color_eyre::eyre::{Report, Result, WrapErr};
 use console::{StyledObject, Term, measure_text_width, style, truncate_str};
 use gstreamer::ClockTime;
-use ntsc_rs::{
-    BackendPreference, NtscEffectFullSettings,
-    settings::SettingsList,
-};
+use ntsc_rs::{BackendPreference, NtscEffectFullSettings, settings::SettingsList};
 use ntsc_rs_gui::{
     app::{
         self,
@@ -72,10 +71,7 @@ impl TypedValueParser for SettingsParser {
                     ContextValue::String(arg.to_string()),
                 );
             }
-            err.insert(
-                ContextKind::InvalidValue,
-                ContextValue::String(val),
-            );
+            err.insert(ContextKind::InvalidValue, ContextValue::String(val));
             err.insert(
                 ContextKind::Usage,
                 ContextValue::String(format!("Failed to parse settings: {}", e)),
@@ -397,11 +393,14 @@ pub fn main() -> Result<()> {
     let matches = command.get_matches();
 
     let settings = if let Some(settings_path) = matches.get_one::<PathBuf>("settings-path") {
-        settings_list.from_json(
-            std::str::from_utf8(&fs::read(settings_path).wrap_err("Failed to open settings file")?)
+        settings_list
+            .from_json(
+                std::str::from_utf8(
+                    &fs::read(settings_path).wrap_err("Failed to open settings file")?,
+                )
                 .wrap_err("Settings file is not valid UTF-8")?,
-        )
-        .wrap_err("Failed to parse settings file")?
+            )
+            .wrap_err("Failed to parse settings file")?
     } else if let Some(settings) = matches.get_one::<NtscEffectFullSettings>("settings-json") {
         settings.clone()
     } else {

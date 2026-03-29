@@ -3,7 +3,9 @@ mod filter;
 pub mod gpu;
 mod noise;
 mod ntsc;
+pub(crate) use ntsc::noise_seeds;
 mod random;
+// Empty line instead of the unused import
 pub mod settings;
 mod shift;
 mod thread_pool;
@@ -49,8 +51,24 @@ pub fn apply_effect_to_yiq_with_backend_preference(
     yiq: &mut YiqView,
     frame_num: usize,
     scale_factor: [f32; 2],
-    _backend_preference: BackendPreference,
+    backend_preference: BackendPreference,
 ) {
-    // Phase 1 fallback: keep existing behavior for all backend preferences.
-    effect.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+    match backend_preference {
+        BackendPreference::Auto | BackendPreference::Cpu => {
+            effect.apply_effect_to_yiq(yiq, frame_num, scale_factor);
+        }
+        _ => {
+            let backend_type = match backend_preference {
+                #[cfg(feature = "gpu-wgpu")]
+                BackendPreference::Wgpu => gpu::BackendType::Wgpu,
+                #[cfg(not(feature = "gpu-wgpu"))]
+                BackendPreference::Wgpu => gpu::BackendType::Cpu,
+                BackendPreference::Cuda => gpu::BackendType::Auto,
+                _ => unreachable!(),
+            };
+
+            let mut runner = gpu::runner::NtscEffectRunner::new(backend_type);
+            runner.apply_effect(yiq, effect, frame_num, scale_factor);
+        }
+    }
 }

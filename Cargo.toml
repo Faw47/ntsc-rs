@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "xtask"]
+members = ["crates/*", "test_wgpu_maintain", "xtask"]
 resolver = "2"
 
 [workspace.lints.clippy]

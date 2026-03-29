@@ -3,12 +3,12 @@
 @group(0) @binding(2) var<storage, read_write> q_plane: array<f32>;
 @group(0) @binding(3) var<storage, read_write> scratch_plane: array<f32>;
 
-struct Params {
+struct ShaderParams {
     width: u32,
     frame_num: u32,
-    seed: u32,
-    noise_idx: u32,
-    
+    seed_hi: u32,
+    seed_lo: u32,
+
     noise_frequency: f32,
     noise_intensity: f32,
     noise_detail: u32,
@@ -21,10 +21,15 @@ struct Params {
 
     chroma_delay_vertical: i32,
     horizontal_scale: f32,
+    vertical_scale: f32,
+    mid_line_position: f32,
+
+    mid_line_enabled: u32,
     _pad1: u32,
     _pad2: u32,
+    _pad3: u32,
 }
-@group(1) @binding(0) var<uniform> params: Params;
+@group(1) @binding(0) var<uniform> params: ShaderParams;
 
 fn chroma_phase_shift(line_num: u32, frame_num: u32, phase_shift: u32, phase_offset: i32) -> u32 {
     if (phase_shift == 0u) {
@@ -64,41 +69,41 @@ fn get_one_line_comb_y(index: u32, width: u32) -> f32 {
 
 fn get_two_line_comb_y(index: u32, width: u32, height: u32) -> f32 {
     let line_num = index / width;
-    let prev_idx = index + select(-(i32(width)), i32(width), line_num == 0u);
-    let next_idx = index + select(i32(width), -(i32(width)), line_num == height - 1u);
+    let prev_idx = i32(index) + select(-(i32(width)), i32(width), line_num == 0u);
+    let next_idx = i32(index) + select(i32(width), -(i32(width)), line_num == height - 1u);
     let cur = scratch_plane[index];
     let prev = scratch_plane[u32(prev_idx)];
     let next = scratch_plane[u32(next_idx)];
     return (cur * 0.5) + (prev * 0.25) + (next * 0.25);
 }
 
+fn process_chroma(val: f32, shift: u32, index: u32, xi: u32) -> vec2<f32> {
+    let offset = (index + shift + xi) & 3u;
+    var i_v = val * select(0.5, 1.0, shift == 0u);
+    var q_v = val * select(0.5, 1.0, shift == 0u);
+    if (offset == 0u) { i_v *= -1.0; q_v *= 0.0; }
+    else if (offset == 1u) { i_v *= 0.0; q_v *= -1.0; }
+    else if (offset == 2u) { i_v *= 1.0; q_v *= 0.0; }
+    else if (offset == 3u) { i_v *= 0.0; q_v *= 1.0; }
+    return vec2<f32>(i_v, q_v);
+}
+
 fn apply_chroma(index: u32, xi: u32, c: f32, c_left: f32, c_right: f32) {
     var i_val = 0.0;
     var q_val = 0.0;
 
-    let process_chroma = |val: f32, shift: u32| -> vec2<f32> {
-        let offset = (index + shift + xi) & 3u;
-        var i_v = val * select(0.5, 1.0, shift == 0u);
-        var q_v = val * select(0.5, 1.0, shift == 0u);
-        if (offset == 0u) { i_v *= -1.0; q_v *= 0.0; }
-        else if (offset == 1u) { i_v *= 0.0; q_v *= -1.0; }
-        else if (offset == 2u) { i_v *= 1.0; q_v *= 0.0; }
-        else if (offset == 3u) { i_v *= 0.0; q_v *= 1.0; }
-        return vec2<f32>(i_v, q_v);
-    };
-
-    let center = process_chroma(c, 0u);
+    let center = process_chroma(c, 0u, index, xi);
     i_val += center.x;
     q_val += center.y;
 
     let width = params.width;
     if (index % width > 0u) {
-        let left = process_chroma(c_left, 4294967295u); // -1u
+        let left = process_chroma(c_left, 4294967295u, index, xi); // -1u
         i_val += left.x;
         q_val += left.y;
     }
     if (index % width < width - 1u) {
-        let right = process_chroma(c_right, 1u);
+        let right = process_chroma(c_right, 1u, index, xi);
         i_val += right.x;
         q_val += right.y;
     }
@@ -107,84 +112,110 @@ fn apply_chroma(index: u32, xi: u32, c: f32, c_left: f32, c_right: f32) {
     q_plane[index] = q_val;
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn demodulate_box(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    if (index >= arrayLength(&y_plane)) { return; }
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
     let width = params.width;
-    let xi = chroma_phase_shift((index / width) * 2u, params.frame_num, params.phase_shift, params.phase_offset);
+    let height = arrayLength(&y_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
+        return;
+    }
+
+    let index = row_idx * width + col_idx;
+    let xi = chroma_phase_shift(row_idx * 2u, params.frame_num, params.phase_shift, params.phase_offset);
 
     let y_c = get_box_y(index);
-    let y_l = select(0.0, get_box_y(index - 1u), index % width > 0u);
-    let y_r = select(0.0, get_box_y(index + 1u), index % width < width - 1u);
+    let y_l = select(0.0, get_box_y(index - 1u), col_idx > 0u);
+    let y_r = select(0.0, get_box_y(index + 1u), col_idx < width - 1u);
 
     y_plane[index] = y_c;
 
     let c_c = y_c - scratch_plane[index];
-    let c_l = y_l - select(0.0, scratch_plane[index - 1u], index % width > 0u);
-    let c_r = y_r - select(0.0, scratch_plane[index + 1u], index % width < width - 1u);
+    let c_l = y_l - select(0.0, scratch_plane[index - 1u], col_idx > 0u);
+    let c_r = y_r - select(0.0, scratch_plane[index + 1u], col_idx < width - 1u);
 
     apply_chroma(index, xi, c_c, c_l, c_r);
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn demodulate_notch(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    if (index >= arrayLength(&y_plane)) { return; }
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
     let width = params.width;
-    let xi = chroma_phase_shift((index / width) * 2u, params.frame_num, params.phase_shift, params.phase_offset);
+    let height = arrayLength(&y_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
+        return;
+    }
+
+    let index = row_idx * width + col_idx;
+    let xi = chroma_phase_shift(row_idx * 2u, params.frame_num, params.phase_shift, params.phase_offset);
 
     let y_c = get_notch_y(index);
-    let y_l = select(0.0, get_notch_y(index - 1u), index % width > 0u);
-    let y_r = select(0.0, get_notch_y(index + 1u), index % width < width - 1u);
+    let y_l = select(0.0, get_notch_y(index - 1u), col_idx > 0u);
+    let y_r = select(0.0, get_notch_y(index + 1u), col_idx < width - 1u);
 
     y_plane[index] = y_c;
 
     let c_c = y_c - scratch_plane[index];
-    let c_l = y_l - select(0.0, scratch_plane[index - 1u], index % width > 0u);
-    let c_r = y_r - select(0.0, scratch_plane[index + 1u], index % width < width - 1u);
+    let c_l = y_l - select(0.0, scratch_plane[index - 1u], col_idx > 0u);
+    let c_r = y_r - select(0.0, scratch_plane[index + 1u], col_idx < width - 1u);
 
     apply_chroma(index, xi, c_c, c_l, c_r);
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn demodulate_one_line_comb(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    if (index >= arrayLength(&y_plane)) { return; }
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
     let width = params.width;
-    let xi = chroma_phase_shift((index / width) * 2u, params.frame_num, params.phase_shift, params.phase_offset);
+    let height = arrayLength(&y_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
+        return;
+    }
+
+    let index = row_idx * width + col_idx;
+    let xi = chroma_phase_shift(row_idx * 2u, params.frame_num, params.phase_shift, params.phase_offset);
 
     let y_c = get_one_line_comb_y(index, width);
-    let y_l = select(0.0, get_one_line_comb_y(index - 1u, width), index % width > 0u);
-    let y_r = select(0.0, get_one_line_comb_y(index + 1u, width), index % width < width - 1u);
+    let y_l = select(0.0, get_one_line_comb_y(index - 1u, width), col_idx > 0u);
+    let y_r = select(0.0, get_one_line_comb_y(index + 1u, width), col_idx < width - 1u);
 
     y_plane[index] = y_c;
 
     let c_c = y_c - scratch_plane[index];
-    let c_l = y_l - select(0.0, scratch_plane[index - 1u], index % width > 0u);
-    let c_r = y_r - select(0.0, scratch_plane[index + 1u], index % width < width - 1u);
+    let c_l = y_l - select(0.0, scratch_plane[index - 1u], col_idx > 0u);
+    let c_r = y_r - select(0.0, scratch_plane[index + 1u], col_idx < width - 1u);
 
     apply_chroma(index, xi, c_c, c_l, c_r);
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn demodulate_two_line_comb(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let index = global_id.x;
-    let total_len = arrayLength(&y_plane);
-    if (index >= total_len) { return; }
+    let col_idx = global_id.x;
+    let row_idx = global_id.y;
     let width = params.width;
-    let height = total_len / width;
-    let xi = chroma_phase_shift((index / width) * 2u, params.frame_num, params.phase_shift, params.phase_offset);
+    let height = arrayLength(&y_plane) / width;
+
+    if (col_idx >= width || row_idx >= height) {
+        return;
+    }
+
+    let index = row_idx * width + col_idx;
+    let xi = chroma_phase_shift(row_idx * 2u, params.frame_num, params.phase_shift, params.phase_offset);
 
     let y_c = get_two_line_comb_y(index, width, height);
-    let y_l = select(0.0, get_two_line_comb_y(index - 1u, width, height), index % width > 0u);
-    let y_r = select(0.0, get_two_line_comb_y(index + 1u, width, height), index % width < width - 1u);
+    let y_l = select(0.0, get_two_line_comb_y(index - 1u, width, height), col_idx > 0u);
+    let y_r = select(0.0, get_two_line_comb_y(index + 1u, width, height), col_idx < width - 1u);
 
     y_plane[index] = y_c;
 
     let c_c = y_c - scratch_plane[index];
-    let c_l = y_l - select(0.0, scratch_plane[index - 1u], index % width > 0u);
-    let c_r = y_r - select(0.0, scratch_plane[index + 1u], index % width < width - 1u);
+    let c_l = y_l - select(0.0, scratch_plane[index - 1u], col_idx > 0u);
+    let c_r = y_r - select(0.0, scratch_plane[index + 1u], col_idx < width - 1u);
 
     apply_chroma(index, xi, c_c, c_l, c_r);
 }

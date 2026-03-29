@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use ntsc_rs::NtscEffect;
-use ntsc_rs::yiq_fielding::{YiqView, YiqField};
+use ntsc_rs::yiq_fielding::{YiqField, YiqView};
 
 fn snow_benchmark(c: &mut Criterion) {
     let width = 1920;

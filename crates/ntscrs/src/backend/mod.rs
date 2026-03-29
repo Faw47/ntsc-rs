@@ -221,7 +221,7 @@ impl BackendManager {
     fn backend_supported(&self, backend: RuntimeBackend) -> bool {
         match backend {
             RuntimeBackend::Cpu => true,
-            RuntimeBackend::Wgpu => false,
+            RuntimeBackend::Wgpu => cfg!(feature = "gpu-wgpu"),
             RuntimeBackend::Cuda => false,
         }
     }

@@ -58,6 +58,16 @@ impl FromSeeder for f32 {
     }
 }
 
+#[inline(always)]
+pub fn fmix64(mut k: u64) -> u64 {
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xff51afd7ed558ccd);
+    k ^= k >> 33;
+    k = k.wrapping_mul(0xc4ceb9fe1a85ec53);
+    k ^= k >> 33;
+    k
+}
+
 /// RNG seed generator which allows you to mix in as much of your own entropy as you want before generating the final
 /// seed.
 #[derive(Clone)]

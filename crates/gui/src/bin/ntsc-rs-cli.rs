@@ -622,10 +622,10 @@ impl ApplessExecutor for CliExecutor {
         let inner = &self.0;
         inner
             .spawn(async {
-                if let Some(cb) = future.await {
-                    if let Err(e) = cb() {
-                        eprintln!("{}", style(format!("Error: {e}")).red());
-                    }
+                if let Some(cb) = future.await
+                    && let Err(e) = cb()
+                {
+                    eprintln!("{}", style(format!("Error: {e}")).red());
                 }
             })
             .detach();
